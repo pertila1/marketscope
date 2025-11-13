@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from datetime import datetime
 from typing import List
 
@@ -9,6 +10,8 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import cm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 
 from ..config import AppConfig, load_config
 from ..domain.models import AggregatedAnalysis, AggregatedEstablishment
@@ -89,7 +92,7 @@ async def _generate_niche_description(analysis: AggregatedAnalysis, config: AppC
         return "Не удалось сгенерировать описание ниши (ошибка LLM)."
 
 
-def _format_establishment_table(items: List[AggregatedEstablishment]) -> Table:
+def _format_establishment_table(items: List[AggregatedEstablishment], font_name: str = "Helvetica") -> Table:
     """Формирует таблицу с информацией о заведениях."""
     data = [["№", "Название", "Город", "Категория", "Ср. чек", "Рейтинг", "Схожесть"]]
     
@@ -98,7 +101,7 @@ def _format_establishment_table(items: List[AggregatedEstablishment]) -> Table:
         finance = item.finance
         reviews = item.reviews
         
-        avg_check = f"{finance.avg_check:.0f} ₽" if finance and finance.avg_check else "—"
+        avg_check = f"{finance.avg_check:.0f} руб" if finance and finance.avg_check else "—"
         rating = f"{reviews.avg_rating:.1f}" if reviews and reviews.avg_rating else "—"
         similarity = f"{est.similarity_score:.2f}" if est.similarity_score is not None else "—"
         
@@ -112,17 +115,29 @@ def _format_establishment_table(items: List[AggregatedEstablishment]) -> Table:
             similarity,
         ])
     
+    bold_font = f"{font_name}-Bold" if font_name != "UnicodeFont" else "UnicodeFont"
     table = Table(data, colWidths=[1*cm, 5*cm, 3*cm, 3*cm, 2.5*cm, 2*cm, 2*cm])
     table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("ALIGN", (0, 0), (-1, 0), "CENTER"),  # Заголовки по центру
+        ("ALIGN", (0, 1), (0, -1), "CENTER"),  # Колонка № по центру
+        ("ALIGN", (1, 1), (1, -1), "LEFT"),  # Название слева
+        ("ALIGN", (2, 1), (2, -1), "LEFT"),  # Город слева
+        ("ALIGN", (3, 1), (3, -1), "LEFT"),  # Категория слева
+        ("ALIGN", (4, 1), (4, -1), "RIGHT"),  # Ср. чек справа
+        ("ALIGN", (5, 1), (5, -1), "CENTER"),  # Рейтинг по центру
+        ("ALIGN", (6, 1), (6, -1), "CENTER"),  # Схожесть по центру
+        ("FONTNAME", (0, 0), (-1, 0), bold_font),
         ("FONTSIZE", (0, 0), (-1, 0), 10),
         ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
+        ("TOPPADDING", (0, 1), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 1), (-1, -1), 6),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
         ("BACKGROUND", (0, 1), (-1, -1), colors.beige),
         ("TEXTCOLOR", (0, 1), (-1, -1), colors.black),
-        ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
+        ("FONTNAME", (0, 1), (-1, -1), font_name),
         ("FONTSIZE", (0, 1), (-1, -1), 9),
         ("GRID", (0, 0), (-1, -1), 1, colors.black),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
@@ -130,16 +145,64 @@ def _format_establishment_table(items: List[AggregatedEstablishment]) -> Table:
     return table
 
 
+def _register_unicode_fonts():
+    """Регистрирует шрифты с поддержкой кириллицы."""
+    # Пробуем найти и зарегистрировать шрифт с поддержкой Unicode
+    font_paths = [
+        # macOS - пробуем разные варианты (проверено, что Arial Unicode есть)
+        "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+        "/Library/Fonts/Arial Unicode.ttf",
+        # Linux
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        # Windows (если запускается на Windows)
+        "C:/Windows/Fonts/arialuni.ttf",
+        "C:/Windows/Fonts/arial.ttf",
+    ]
+    
+    for font_path in font_paths:
+        if os.path.exists(font_path):
+            try:
+                # Регистрируем обычный и жирный шрифты
+                pdfmetrics.registerFont(TTFont("UnicodeFont", font_path))
+                # Пробуем зарегистрировать жирный вариант
+                try:
+                    bold_path = font_path.replace("Regular", "Bold").replace(".ttf", "Bold.ttf")
+                    if os.path.exists(bold_path):
+                        pdfmetrics.registerFont(TTFont("UnicodeFont-Bold", bold_path))
+                except Exception:
+                    pass
+                print(f"[Отчёт] Используется шрифт с поддержкой Unicode: {font_path}", file=sys.stderr)
+                return "UnicodeFont"
+            except Exception as e:
+                print(f"[Отчёт] Ошибка при загрузке шрифта {font_path}: {e}", file=sys.stderr)
+                continue
+    
+    # Если не нашли внешний шрифт, предупреждаем
+    print(f"[Отчёт] ВНИМАНИЕ: Не найден шрифт с поддержкой Unicode. Кириллица может отображаться некорректно.", file=sys.stderr)
+    print(f"[Отчёт] Используется стандартный шрифт Helvetica (без поддержки кириллицы)", file=sys.stderr)
+    return "Helvetica"
+
+
 def generate_pdf_report(analysis: AggregatedAnalysis, niche_description: str, output_path: str) -> None:
     """Генерирует PDF отчет с анализом заведений."""
+    # Регистрируем шрифт с поддержкой кириллицы
+    base_font_name = _register_unicode_fonts()
+    
     doc = SimpleDocTemplate(output_path, pagesize=A4)
     story = []
     styles = getSampleStyleSheet()
+    
+    # Обновляем стандартные стили для поддержки кириллицы ДО их использования
+    for style_name in ["Normal", "Heading1", "Heading2", "Heading3"]:
+        if style_name in styles:
+            styles[style_name].fontName = base_font_name
     
     # Заголовок
     title_style = ParagraphStyle(
         "CustomTitle",
         parent=styles["Heading1"],
+        fontName=base_font_name,
         fontSize=20,
         textColor=colors.HexColor("#1a1a1a"),
         spaceAfter=30,
@@ -149,9 +212,15 @@ def generate_pdf_report(analysis: AggregatedAnalysis, niche_description: str, ou
     story.append(Spacer(1, 0.5*cm))
     
     # Информация о запросе
-    story.append(Paragraph(f"<b>Запрос:</b> {analysis.query}", styles["Normal"]))
-    story.append(Paragraph(f"<b>Дата анализа:</b> {datetime.now().strftime('%d.%m.%Y %H:%M')}", styles["Normal"]))
-    story.append(Paragraph(f"<b>Количество заведений:</b> {len(analysis.items)}", styles["Normal"]))
+    info_style = ParagraphStyle(
+        "InfoStyle",
+        parent=styles["Normal"],
+        fontName=base_font_name,
+        fontSize=11,
+    )
+    story.append(Paragraph(f"<b>Запрос:</b> {analysis.query}", info_style))
+    story.append(Paragraph(f"<b>Дата анализа:</b> {datetime.now().strftime('%d.%m.%Y %H:%M')}", info_style))
+    story.append(Paragraph(f"<b>Количество заведений:</b> {len(analysis.items)}", info_style))
     story.append(Spacer(1, 0.5*cm))
     
     # Описание ниши
@@ -161,17 +230,23 @@ def generate_pdf_report(analysis: AggregatedAnalysis, niche_description: str, ou
     niche_style = ParagraphStyle(
         "NicheDescription",
         parent=styles["Normal"],
-        fontSize=10,
-        leading=14,
+        fontName=base_font_name,
+        fontSize=11,
+        leading=16,
         spaceAfter=12,
     )
-    story.append(Paragraph(niche_description.replace("\n", "<br/>"), niche_style))
+    
+    # Проверяем, что описание ниши не пустое
+    if niche_description and niche_description.strip():
+        story.append(Paragraph(niche_description.replace("\n", "<br/>"), niche_style))
+    else:
+        story.append(Paragraph("Описание ниши недоступно.", niche_style))
     story.append(Spacer(1, 0.5*cm))
     
     # Таблица заведений
     story.append(Paragraph("<b>Топ заведений</b>", styles["Heading2"]))
     story.append(Spacer(1, 0.3*cm))
-    story.append(_format_establishment_table(analysis.items))
+    story.append(_format_establishment_table(analysis.items, base_font_name))
     story.append(PageBreak())
     
     # Детальная информация по каждому заведению
@@ -198,8 +273,6 @@ def generate_pdf_report(analysis: AggregatedAnalysis, niche_description: str, ou
             info_lines.append(f"<b>Категория:</b> {est.category}")
         if est.similarity_score is not None:
             info_lines.append(f"<b>Схожесть с запросом:</b> {est.similarity_score:.2f}")
-        if est.url:
-            info_lines.append(f"<b>URL:</b> {est.url}")
         
         if info_lines:
             story.append(Paragraph("<br/>".join(info_lines), styles["Normal"]))
@@ -210,13 +283,13 @@ def generate_pdf_report(analysis: AggregatedAnalysis, niche_description: str, ou
             story.append(Paragraph("<b>Финансовые показатели:</b>", styles["Normal"]))
             finance_lines = []
             if finance.avg_check:
-                finance_lines.append(f"Средний чек: {finance.avg_check:.0f} ₽")
+                finance_lines.append(f"Средний чек: {finance.avg_check:.0f} руб")
             if finance.avg_revenue:
-                finance_lines.append(f"Средняя выручка: {finance.avg_revenue:,.0f} ₽/год")
+                finance_lines.append(f"Средняя выручка: {finance.avg_revenue:,.0f} руб/год")
             if finance.avg_expenses:
-                finance_lines.append(f"Средние расходы: {finance.avg_expenses:,.0f} ₽/год")
+                finance_lines.append(f"Средние расходы: {finance.avg_expenses:,.0f} руб/год")
             if finance.avg_income:
-                finance_lines.append(f"Средний доход: {finance.avg_income:,.0f} ₽/год")
+                finance_lines.append(f"Средний доход: {finance.avg_income:,.0f} руб/год")
             
             if finance_lines:
                 story.append(Paragraph(" | ".join(finance_lines), styles["Normal"]))
@@ -263,9 +336,12 @@ def generate_pdf_report(analysis: AggregatedAnalysis, niche_description: str, ou
 
 async def create_report(analysis: AggregatedAnalysis, output_dir: str = ".") -> str:
     """Создает PDF отчет и возвращает путь к файлу."""
+    import sys
     config = load_config()
     
+    print(f"[Этап 3/3] Начинаю генерацию PDF отчёта...", file=sys.stderr)
     # Генерируем описание ниши
+    print(f"[Отчёт] Генерирую описание ниши...", file=sys.stderr)
     niche_description = await _generate_niche_description(analysis, config)
     
     # Формируем имя файла
@@ -275,7 +351,9 @@ async def create_report(analysis: AggregatedAnalysis, output_dir: str = ".") -> 
     output_path = os.path.join(output_dir, filename)
     
     # Генерируем PDF
+    print(f"[Отчёт] Формирую PDF документ...", file=sys.stderr)
     generate_pdf_report(analysis, niche_description, output_path)
+    print(f"[Этап 3/3] PDF отчёт успешно создан", file=sys.stderr)
     
     return output_path
 

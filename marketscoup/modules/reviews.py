@@ -142,8 +142,13 @@ async def _fetch_reviews_one_llm(est: Establishment, config: AppConfig) -> Revie
 
 
 async def fetch_reviews_batch(establishments: List[Establishment], config: AppConfig | None = None) -> Dict[str, ReviewSummary]:
+    import sys
     cfg = config or load_config()
     summaries: Dict[str, ReviewSummary] = {}
-    for est in establishments:
+    print(f"[Отзывы] Начинаю сбор отзывов для {len(establishments)} заведений...", file=sys.stderr)
+    for idx, est in enumerate(establishments, 1):
         summaries[est.id] = await _fetch_reviews_one_llm(est, cfg)
+        if (cfg.log_level or "").upper() == "DEBUG":
+            print(f"[Отзывы] Обработано {idx}/{len(establishments)}: {est.name}", file=sys.stderr)
+    print(f"[Отзывы] Сбор отзывов завершён", file=sys.stderr)
     return summaries
