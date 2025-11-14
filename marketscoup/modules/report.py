@@ -26,8 +26,172 @@ NICHE_ANALYSIS_PROMPT = (
     "3) Средний ценовой сегмент и его особенности, "
     "4) Общие тренды и паттерны, "
     "5) Ключевые конкурентные преимущества и недостатки. "
-    "Верни СТРОГО валидный JSON: {\"niche_description\": \"текст описания\"} без пояснений."
+    "КРИТИЧЕСКИ ВАЖНО: В поле niche_description должен быть РЕАЛЬНЫЙ развёрнутый текст описания, "
+    "а НЕ placeholder типа 'текст описания' или 'описание'. "
+    "Верни СТРОГО валидный JSON: {\"niche_description\": \"развёрнутый текст с реальным описанием ниши\"} без пояснений."
 )
+
+BUSINESS_RECOMMENDATIONS_PROMPT = (
+    "Ты — бизнес-консультант по ресторанному бизнесу. На основе анализа заведений в нише "
+    "сформируй практические бизнес-рекомендации для открытия или развития заведения в этой сфере. "
+    "Включи рекомендации по: "
+    "1) Ценовой политике и позиционированию, "
+    "2) Концепции и формату заведения, "
+    "3) Финансовому планированию (инвестиции, окупаемость), "
+    "4) Маркетингу и привлечению клиентов, "
+    "5) Операционным рискам и способам их минимизации. "
+    "Стиль: деловой, конкретный, с цифрами и примерами. "
+    "КРИТИЧЕСКИ ВАЖНО: "
+    "1) В поле recommendations должен быть РЕАЛЬНЫЙ развёрнутый текст рекомендаций, "
+    "а НЕ placeholder типа 'текст рекомендаций' или 'рекомендации'. "
+    "2) Рекомендации должны СТРОГО соответствовать ценовому сегменту из запроса пользователя. "
+    "Если запрос про ПРЕМИУМ-сегмент — рекомендации только для премиум-заведений, "
+    "если про СРЕДНИЙ — только для среднего сегмента, если про БЮДЖЕТНЫЙ — только для бюджетного. "
+    "3) ЗАПРЕЩЕНО упоминать заведения или концепции из других ценовых сегментов. "
+    "Например, для премиум стейкхауса НЕ упоминать массовые или бюджетные заведения. "
+    "4) Анализируй средний чек и финансовые показатели из анализа заведений, "
+    "чтобы точно определить сегмент и давать рекомендации только для этого сегмента. "
+    "Верни СТРОГО валидный JSON: {\"recommendations\": \"развёрнутый текст с реальными рекомендациями\"} без пояснений."
+)
+
+
+async def _generate_business_recommendations(analysis: AggregatedAnalysis, config: AppConfig) -> str:
+    """Генерирует бизнес-рекомендации для ниши на основе анализа заведений."""
+    import sys
+    if not config.llm_api_key:
+        return "Бизнес-рекомендации недоступны (отсутствует LLM API ключ)."
+    
+    # Формируем сводку по заведениям для LLM
+    establishments_summary = []
+    for item in analysis.items:
+        est = item.establishment
+        finance = item.finance
+        reviews = item.reviews
+        
+        summary_parts = [
+            f"Название: {est.name}",
+            f"Категория: {est.category or 'не указана'}",
+        ]
+        
+        if finance and finance.avg_check:
+            summary_parts.append(f"Средний чек: {finance.avg_check:.0f} руб")
+        if finance and finance.avg_revenue:
+            summary_parts.append(f"Выручка: {finance.avg_revenue:,.0f} руб/год")
+        if finance and finance.avg_expenses:
+            summary_parts.append(f"Расходы: {finance.avg_expenses:,.0f} руб/год")
+        
+        if reviews and reviews.avg_rating:
+            summary_parts.append(f"Рейтинг: {reviews.avg_rating:.1f}")
+        
+        establishments_summary.append(" | ".join(summary_parts))
+    
+    # Определяем ценовой сегмент на основе среднего чека
+    avg_checks = [
+        item.finance.avg_check 
+        for item in analysis.items 
+        if item.finance and item.finance.avg_check
+    ]
+    segment_hint = ""
+    if avg_checks:
+        avg_check = sum(avg_checks) / len(avg_checks)
+        if avg_check >= 3000:
+            segment_hint = "ВАЖНО: Анализируемые заведения относятся к ПРЕМИУМ-сегменту (средний чек от 3000 руб). Рекомендации должны быть ТОЛЬКО для премиум-заведений. ЗАПРЕЩЕНО упоминать средние или бюджетные концепции."
+        elif avg_check >= 1500:
+            segment_hint = "ВАЖНО: Анализируемые заведения относятся к СРЕДНЕМУ сегменту (средний чек 1500-3000 руб). Рекомендации должны быть ТОЛЬКО для среднего сегмента. ЗАПРЕЩЕНО упоминать премиум или бюджетные концепции."
+        else:
+            segment_hint = "ВАЖНО: Анализируемые заведения относятся к БЮДЖЕТНОМУ сегменту (средний чек до 1500 руб). Рекомендации должны быть ТОЛЬКО для бюджетного сегмента. ЗАПРЕЩЕНО упоминать премиум или средние концепции."
+    
+    user_prompt = "\n".join([
+        f"Запрос пользователя: {analysis.query}",
+        "",
+        segment_hint,
+        "",
+        "Анализ заведений в нише:",
+        "\n".join(f"{i+1}. {s}" for i, s in enumerate(establishments_summary)),
+        "",
+        "Сформируй практические бизнес-рекомендации для этой ниши, СТРОГО соответствующие ценовому сегменту из запроса и анализа заведений.",
+        "Рекомендации должны быть только для указанного сегмента, без упоминания других ценовых категорий.",
+    ])
+    
+    settings = LlmSettings(
+        provider=config.llm_provider or "perplexity",
+        api_key=config.llm_api_key,
+        model=config.llm_model or "sonar-reasoning-pro",
+    )
+    client = get_llm_client(settings)
+    
+    try:
+        payload = await client.complete_json(
+            system=BUSINESS_RECOMMENDATIONS_PROMPT,
+            user=user_prompt,
+            max_tokens=3000,
+        )
+        
+        # Если клиент вернул _raw, пробуем коэрсию
+        if isinstance(payload, dict) and "_raw" in payload:
+            if (config.log_level or "").upper() == "DEBUG":
+                print(f"[Отчёт] Бизнес-рекомендации: получен _raw ответ, выполняю коэрсию", file=sys.stderr)
+            raw_text = str(payload.get("_raw", ""))
+            # Определяем сегмент для промпта коэрсии
+            avg_checks = [
+                item.finance.avg_check 
+                for item in analysis.items 
+                if item.finance and item.finance.avg_check
+            ]
+            segment_note = ""
+            if avg_checks:
+                avg_check = sum(avg_checks) / len(avg_checks)
+                if avg_check >= 3000:
+                    segment_note = "КРИТИЧЕСКИ ВАЖНО: Рекомендации должны быть ТОЛЬКО для ПРЕМИУМ-сегмента. ЗАПРЕЩЕНО упоминать средние или бюджетные концепции."
+                elif avg_check >= 1500:
+                    segment_note = "КРИТИЧЕСКИ ВАЖНО: Рекомендации должны быть ТОЛЬКО для СРЕДНЕГО сегмента. ЗАПРЕЩЕНО упоминать премиум или бюджетные концепции."
+                else:
+                    segment_note = "КРИТИЧЕСКИ ВАЖНО: Рекомендации должны быть ТОЛЬКО для БЮДЖЕТНОГО сегмента. ЗАПРЕЩЕНО упоминать премиум или средние концепции."
+            
+            payload = await client.complete_json(
+                system="Ты — конвертор данных в строгий JSON.",
+                user=f"""Преобразуй текст ниже в валидный JSON:
+{{
+  "recommendations": "развёрнутый текст бизнес-рекомендаций"
+}}
+
+ВАЖНО: 
+1) recommendations должен содержать развёрнутые практические бизнес-рекомендации (не просто "текст рекомендаций", а реальные рекомендации).
+2) {segment_note}
+
+Текст для преобразования:
+{raw_text[:7000]}""",
+                max_tokens=3000,
+            )
+        
+        # Извлекаем рекомендации из ответа
+        if isinstance(payload, dict):
+            # Пробуем разные варианты ключей
+            recommendations = (
+                payload.get("recommendations") 
+                or payload.get("recommendation") 
+                or payload.get("text")
+                or payload.get("content")
+            )
+            
+            if recommendations:
+                rec_str = str(recommendations).strip()
+                # Проверяем, что это не просто placeholder
+                if rec_str and rec_str.lower() not in ["текст рекомендаций", "рекомендации", "text", "none", "null"]:
+                    if (config.log_level or "").upper() == "DEBUG":
+                        print(f"[Отчёт] Бизнес-рекомендации успешно извлечены (длина: {len(rec_str)})", file=sys.stderr)
+                    return rec_str
+                else:
+                    if (config.log_level or "").upper() == "DEBUG":
+                        print(f"[Отчёт] Бизнес-рекомендации: получен placeholder вместо реального текста", file=sys.stderr)
+        
+        if (config.log_level or "").upper() == "DEBUG":
+            print(f"[Отчёт] Бизнес-рекомендации: не удалось извлечь из payload={payload}", file=sys.stderr)
+        return "Не удалось сгенерировать бизнес-рекомендации."
+    except LlmError as e:
+        if (config.log_level or "").upper() == "DEBUG":
+            print(f"[Отчёт] Бизнес-рекомендации: ошибка LLM - {e}", file=sys.stderr)
+        return "Не удалось сгенерировать бизнес-рекомендации (ошибка LLM)."
 
 
 async def _generate_niche_description(analysis: AggregatedAnalysis, config: AppConfig) -> str:
@@ -76,19 +240,58 @@ async def _generate_niche_description(analysis: AggregatedAnalysis, config: AppC
     client = get_llm_client(settings)
     
     try:
+        import sys
         payload = await client.complete_json(
             system=NICHE_ANALYSIS_PROMPT,
             user=user_prompt,
             max_tokens=2000,
         )
+        
+        # Если клиент вернул _raw, пробуем коэрсию
+        if isinstance(payload, dict) and "_raw" in payload:
+            if (config.log_level or "").upper() == "DEBUG":
+                print(f"[Отчёт] Описание ниши: получен _raw ответ, выполняю коэрсию", file=sys.stderr)
+            raw_text = str(payload.get("_raw", ""))
+            payload = await client.complete_json(
+                system="Ты — конвертор данных в строгий JSON.",
+                user=f"""Преобразуй текст ниже в валидный JSON:
+{{
+  "niche_description": "развёрнутый текст описания ниши"
+}}
+
+ВАЖНО: niche_description должен содержать развёрнутое описание ниши (не просто "текст описания", а реальное описание).
+
+Текст для преобразования:
+{raw_text[:7000]}""",
+                max_tokens=2000,
+            )
+        
         # Извлекаем описание из ответа
         if isinstance(payload, dict):
-            description = payload.get("niche_description") or payload.get("description")
+            description = (
+                payload.get("niche_description") 
+                or payload.get("description")
+                or payload.get("text")
+                or payload.get("content")
+            )
             if description:
-                return str(description)
-        # Fallback если структура неожиданная
+                desc_str = str(description).strip()
+                # Проверяем, что это не просто placeholder
+                if desc_str and desc_str.lower() not in ["текст описания", "описание", "text", "none", "null"]:
+                    if (config.log_level or "").upper() == "DEBUG":
+                        print(f"[Отчёт] Описание ниши успешно извлечено (длина: {len(desc_str)})", file=sys.stderr)
+                    return desc_str
+                else:
+                    if (config.log_level or "").upper() == "DEBUG":
+                        print(f"[Отчёт] Описание ниши: получен placeholder вместо реального текста", file=sys.stderr)
+        
+        if (config.log_level or "").upper() == "DEBUG":
+            print(f"[Отчёт] Описание ниши: не удалось извлечь из payload={payload}", file=sys.stderr)
         return "Не удалось сгенерировать описание ниши."
-    except LlmError:
+    except LlmError as e:
+        import sys
+        if (config.log_level or "").upper() == "DEBUG":
+            print(f"[Отчёт] Описание ниши: ошибка LLM - {e}", file=sys.stderr)
         return "Не удалось сгенерировать описание ниши (ошибка LLM)."
 
 
@@ -184,7 +387,7 @@ def _register_unicode_fonts():
     return "Helvetica"
 
 
-def generate_pdf_report(analysis: AggregatedAnalysis, niche_description: str, output_path: str) -> None:
+def generate_pdf_report(analysis: AggregatedAnalysis, niche_description: str, business_recommendations: str, output_path: str) -> None:
     """Генерирует PDF отчет с анализом заведений."""
     # Регистрируем шрифт с поддержкой кириллицы
     base_font_name = _register_unicode_fonts()
@@ -231,14 +434,19 @@ def generate_pdf_report(analysis: AggregatedAnalysis, niche_description: str, ou
         "NicheDescription",
         parent=styles["Normal"],
         fontName=base_font_name,
-        fontSize=11,
-        leading=16,
-        spaceAfter=12,
+        fontSize=10,
+        leading=14,
+        spaceAfter=8,
     )
     
     # Проверяем, что описание ниши не пустое
-    if niche_description and niche_description.strip():
-        story.append(Paragraph(niche_description.replace("\n", "<br/>"), niche_style))
+    if niche_description and niche_description.strip() and niche_description != "Не удалось сгенерировать описание ниши." and niche_description != "Не удалось сгенерировать описание ниши (ошибка LLM).":
+        # Разбиваем на абзацы для лучшей читаемости
+        paragraphs = niche_description.split("\n\n")
+        for para in paragraphs:
+            if para.strip():
+                story.append(Paragraph(para.strip().replace("\n", "<br/>"), niche_style))
+                story.append(Spacer(1, 0.2*cm))
     else:
         story.append(Paragraph("Описание ниши недоступно.", niche_style))
     story.append(Spacer(1, 0.5*cm))
@@ -263,72 +471,111 @@ def generate_pdf_report(analysis: AggregatedAnalysis, niche_description: str, ou
         story.append(Paragraph(est_title, styles["Heading3"]))
         story.append(Spacer(1, 0.2*cm))
         
-        # Основная информация
+        # Основная информация (сухая, деловая)
         info_lines = []
-        if est.address:
-            info_lines.append(f"<b>Адрес:</b> {est.address}")
         if est.city:
             info_lines.append(f"<b>Город:</b> {est.city}")
         if est.category:
             info_lines.append(f"<b>Категория:</b> {est.category}")
-        if est.similarity_score is not None:
-            info_lines.append(f"<b>Схожесть с запросом:</b> {est.similarity_score:.2f}")
+        if est.address:
+            info_lines.append(f"<b>Адрес:</b> {est.address}")
         
         if info_lines:
-            story.append(Paragraph("<br/>".join(info_lines), styles["Normal"]))
-            story.append(Spacer(1, 0.3*cm))
+            story.append(Paragraph(" | ".join(info_lines), styles["Normal"]))
+            story.append(Spacer(1, 0.2*cm))
         
-        # Финансовая информация
+        # Финансовые показатели (ключевые метрики)
         if finance:
-            story.append(Paragraph("<b>Финансовые показатели:</b>", styles["Normal"]))
             finance_lines = []
             if finance.avg_check:
-                finance_lines.append(f"Средний чек: {finance.avg_check:.0f} руб")
+                finance_lines.append(f"<b>Средний чек:</b> {finance.avg_check:.0f} руб")
             if finance.avg_revenue:
-                finance_lines.append(f"Средняя выручка: {finance.avg_revenue:,.0f} руб/год")
+                finance_lines.append(f"<b>Выручка:</b> {finance.avg_revenue:,.0f} руб/год")
             if finance.avg_expenses:
-                finance_lines.append(f"Средние расходы: {finance.avg_expenses:,.0f} руб/год")
+                finance_lines.append(f"<b>Расходы:</b> {finance.avg_expenses:,.0f} руб/год")
             if finance.avg_income:
-                finance_lines.append(f"Средний доход: {finance.avg_income:,.0f} руб/год")
+                finance_lines.append(f"<b>Доход:</b> {finance.avg_income:,.0f} руб/год")
             
             if finance_lines:
                 story.append(Paragraph(" | ".join(finance_lines), styles["Normal"]))
-            story.append(Spacer(1, 0.3*cm))
+                story.append(Spacer(1, 0.2*cm))
         
-        # Отзывы
+        # Отзывы и аналитика
         if reviews:
-            story.append(Paragraph("<b>Отзывы и рейтинги:</b>", styles["Normal"]))
             review_lines = []
             if reviews.avg_rating:
-                review_lines.append(f"Средний рейтинг: {reviews.avg_rating:.1f}")
+                review_lines.append(f"<b>Рейтинг:</b> {reviews.avg_rating:.1f}/5.0")
             if reviews.reviews_count and reviews.reviews_count > 0:
-                review_lines.append(f"Количество отзывов: {reviews.reviews_count}")
+                review_lines.append(f"<b>Отзывов:</b> {reviews.reviews_count}")
             
             if review_lines:
                 story.append(Paragraph(" | ".join(review_lines), styles["Normal"]))
             
+            # Бизнес-аналитическое описание (отдельный абзац)
             if reviews.overall_opinion:
-                story.append(Spacer(1, 0.2*cm))
-                story.append(Paragraph("<b>Общее описание:</b>", styles["Normal"]))
-                story.append(Paragraph(reviews.overall_opinion.replace("\n", "<br/>"), niche_style))
+                story.append(Spacer(1, 0.25*cm))
+                story.append(Paragraph("<b>Бизнес-аналитика:</b>", styles["Normal"]))
+                story.append(Spacer(1, 0.1*cm))
+                business_style = ParagraphStyle(
+                    "BusinessStyle",
+                    parent=styles["Normal"],
+                    fontName=base_font_name,
+                    fontSize=9,
+                    leading=13,
+                    spaceAfter=8,
+                )
+                # Разбиваем на абзацы для лучшей читаемости
+                paragraphs = reviews.overall_opinion.split("\n\n")
+                for para in paragraphs:
+                    if para.strip():
+                        story.append(Paragraph(para.strip().replace("\n", "<br/>"), business_style))
+                        story.append(Spacer(1, 0.15*cm))
             
+            # Преимущества (отдельный абзац)
             if reviews.pros:
                 story.append(Spacer(1, 0.2*cm))
-                story.append(Paragraph("<b>Плюсы:</b>", styles["Normal"]))
+                story.append(Paragraph("<b>Преимущества:</b>", styles["Normal"]))
+                story.append(Spacer(1, 0.1*cm))
                 for pro in reviews.pros:
                     story.append(Paragraph(f"• {pro}", styles["Normal"]))
             
+            # Риски (отдельный абзац)
             if reviews.cons:
                 story.append(Spacer(1, 0.2*cm))
-                story.append(Paragraph("<b>Минусы:</b>", styles["Normal"]))
+                story.append(Paragraph("<b>Риски:</b>", styles["Normal"]))
+                story.append(Spacer(1, 0.1*cm))
                 for con in reviews.cons:
                     story.append(Paragraph(f"• {con}", styles["Normal"]))
         
-        story.append(Spacer(1, 0.5*cm))
+        story.append(Spacer(1, 0.3*cm))
         
         # Разделитель между заведениями (кроме последнего)
         if idx < len(analysis.items):
-            story.append(Spacer(1, 0.3*cm))
+            story.append(Spacer(1, 0.2*cm))
+    
+    # Бизнес-рекомендации
+    story.append(PageBreak())
+    story.append(Paragraph("<b>Бизнес-рекомендации для ниши</b>", styles["Heading2"]))
+    story.append(Spacer(1, 0.3*cm))
+    
+    recommendations_style = ParagraphStyle(
+        "RecommendationsStyle",
+        parent=styles["Normal"],
+        fontName=base_font_name,
+        fontSize=10,
+        leading=14,
+        spaceAfter=8,
+    )
+    
+    if business_recommendations and business_recommendations.strip() and business_recommendations != "Не удалось сгенерировать бизнес-рекомендации." and business_recommendations != "Не удалось сгенерировать бизнес-рекомендации (ошибка LLM).":
+        # Разбиваем на абзацы для лучшей читаемости
+        paragraphs = business_recommendations.split("\n\n")
+        for para in paragraphs:
+            if para.strip():
+                story.append(Paragraph(para.strip().replace("\n", "<br/>"), recommendations_style))
+                story.append(Spacer(1, 0.2*cm))
+    else:
+        story.append(Paragraph("Бизнес-рекомендации недоступны.", recommendations_style))
     
     # Генерируем PDF
     doc.build(story)
@@ -343,6 +590,18 @@ async def create_report(analysis: AggregatedAnalysis, output_dir: str = ".") -> 
     # Генерируем описание ниши
     print(f"[Отчёт] Генерирую описание ниши...", file=sys.stderr)
     niche_description = await _generate_niche_description(analysis, config)
+    if niche_description and niche_description.strip():
+        print(f"[Отчёт] Описание ниши сгенерировано (длина: {len(niche_description)} символов)", file=sys.stderr)
+    else:
+        print(f"[Отчёт] ВНИМАНИЕ: Описание ниши не сгенерировано или пустое", file=sys.stderr)
+    
+    # Генерируем бизнес-рекомендации
+    print(f"[Отчёт] Генерирую бизнес-рекомендации...", file=sys.stderr)
+    business_recommendations = await _generate_business_recommendations(analysis, config)
+    if business_recommendations and business_recommendations.strip():
+        print(f"[Отчёт] Бизнес-рекомендации сгенерированы (длина: {len(business_recommendations)} символов)", file=sys.stderr)
+    else:
+        print(f"[Отчёт] ВНИМАНИЕ: Бизнес-рекомендации не сгенерированы или пустые", file=sys.stderr)
     
     # Формируем имя файла
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -352,7 +611,7 @@ async def create_report(analysis: AggregatedAnalysis, output_dir: str = ".") -> 
     
     # Генерируем PDF
     print(f"[Отчёт] Формирую PDF документ...", file=sys.stderr)
-    generate_pdf_report(analysis, niche_description, output_path)
+    generate_pdf_report(analysis, niche_description, business_recommendations, output_path)
     print(f"[Этап 3/3] PDF отчёт успешно создан", file=sys.stderr)
     
     return output_path

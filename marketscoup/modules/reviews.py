@@ -8,14 +8,34 @@ from ..llm.client import LlmSettings, get_llm_client, LlmError
 
 
 REVIEWS_SYSTEM_PROMPT = (
-    "Ты — эксперт по анализу отзывов и ресторанному бизнесу. "
-    "Найди информацию о заведении в Яндекс.Картах и 2ГИС, проанализируй отзывы и выдели все особенности и нюансы заведения. "
-    "Обрати особое внимание на уникальные детали, атмосферу, концепцию, особенности кухни и сервиса. "
+    "Ты — аналитик ресторанного рынка. "
+    "Найди информацию о заведении в Яндекс.Картах и 2ГИС, проанализируй отзывы и сформируй аналитическое описание. "
+    "Используй понятный язык, сочетающий бизнес-аналитику с доступным изложением. "
+    "Фокусируйся на операционных показателях, бизнес-модели, конкурентных преимуществах и рисках, но объясняй их понятно. "
+    "Стиль: аналитический, но доступный, структурированный, с акцентом на важные метрики и характеристики, без излишней формальности. "
     "Верни СТРОГО валидный JSON без пояснений, текста до/после и без markdown."
 )
 
 
-def _build_reviews_user_prompt(est: Establishment) -> str:
+def _build_reviews_user_prompt(est: Establishment, price_segment: str = "", segment_keywords: str = "") -> str:
+    segment_info = ""
+    if price_segment and price_segment != "УКАЗАННЫЙ В ЗАПРОСЕ":
+        segment_info = f"\nВАЖНО: Заведение относится к ценовому сегменту {price_segment}. "
+        if segment_keywords:
+            # Определяем запрещённые слова
+            if price_segment == "ПРЕМИУМ":
+                forbidden_words = "бюджет, эконом, дешевый, недорогой, низкий ценовой"
+            elif price_segment == "БЮДЖЕТНЫЙ":
+                forbidden_words = "премиум, люкс, элитный, премиальный, высокий ценовой"
+            elif price_segment == "СРЕДНИЙ":
+                forbidden_words = "премиум, люкс, бюджет, эконом"
+            else:
+                forbidden_words = ""
+            
+            if forbidden_words:
+                segment_info += f"ЗАПРЕЩЕНО упоминать слова: {forbidden_words}. "
+            segment_info += f"Используй терминологию, соответствующую сегменту {price_segment}."
+    
     return f"""Найди информацию о заведении в Яндекс.Картах и 2ГИС и проанализируй отзывы.
 
 Заведение:
@@ -23,6 +43,7 @@ def _build_reviews_user_prompt(est: Establishment) -> str:
 - Город: {est.city or 'не указан'}
 - Категория: {est.category or 'не указана'}
 - URL: {est.url or 'не указан'}
+{segment_info}
 
 Верни JSON со следующей структурой:
 {{
@@ -34,19 +55,21 @@ def _build_reviews_user_prompt(est: Establishment) -> str:
 }}
 
 КРИТИЧЕСКИ ВАЖНО для поля overall_opinion:
-Опиши РАЗВЁРНУТО (8-12 предложений) все особенности и нюансы заведения:
-- Атмосфера и интерьер: стиль оформления, обстановка, детали дизайна, освещение, музыка
-- Кухня: специализация, фирменные блюда, особенности приготовления, авторские решения, подача
-- Сервис: уровень обслуживания, скорость, профессионализм персонала, особенности работы
-- Концепция: формат заведения, целевая аудитория, ценовой сегмент, уникальные особенности
-- Детали и нюансы: что делает это заведение особенным, изюминки, запоминающиеся моменты
-- Расположение и окружение: где находится, что рядом, удобство расположения
+Опиши РАЗВЁРНУТО (8-12 предложений) в стиле, среднем между бизнес-аналитическим и обычным:
+- Бизнес-модель и позиционирование: ценовой сегмент, целевая аудитория, формат заведения, как заведение позиционируется на рынке
+- Операционные характеристики: как работает заведение, средний чек, эффективность сервиса, как организованы процессы
+- Концепция и особенности: что делает заведение особенным, ключевые преимущества, особенности меню и кухни
+- Качество сервиса и клиентский опыт: уровень обслуживания, скорость работы, профессионализм персонала, кто приходит в заведение
+- Локация и окружение: где находится, удобство расположения, что рядом, потенциал для привлечения клиентов
+- Проблемы и ограничения: какие есть слабости, типичные проблемы, что может мешать развитию
 
 Важно:
 - avg_rating должен быть числом (например, 4.5)
-- overall_opinion - РАЗВЁРНУТОЕ описание (8-12 предложений) с акцентом на особенности и нюансы
-- pros - ровно 2 положительных пункта
-- cons - ровно 2 отрицательных пункта
+- overall_opinion - РАЗВЁРНУТОЕ аналитическое описание (8-12 предложений) в доступном, но информативном стиле
+- Используй понятный язык, но сохраняй аналитический подход
+- Избегай излишней формальности и сложной бизнес-терминологии, но описывай важные бизнес-аспекты
+- pros - ровно 2 положительных пункта (ключевые преимущества)
+- cons - ровно 2 отрицательных пункта (риски или слабости)
 - Верни только JSON, без дополнительного текста"""
 
 
@@ -81,7 +104,7 @@ def _parse_reviews_payload(establishment_id: str, payload: Any) -> ReviewSummary
     )
 
 
-async def _fetch_reviews_one_llm(est: Establishment, config: AppConfig) -> ReviewSummary:
+async def _fetch_reviews_one_llm(est: Establishment, config: AppConfig, price_segment: str = "", segment_keywords: str = "") -> ReviewSummary:
     if not config.llm_api_key:
         return ReviewSummary(
             establishment_id=est.id,
@@ -103,24 +126,38 @@ async def _fetch_reviews_one_llm(est: Establishment, config: AppConfig) -> Revie
     try:
         payload = await client.complete_json(
             system=REVIEWS_SYSTEM_PROMPT,
-            user=_build_reviews_user_prompt(est),
+            user=_build_reviews_user_prompt(est, price_segment, segment_keywords),
             max_tokens=6000
         )
         
         # If client returned raw, try one coercion pass
         if isinstance(payload, dict) and "_raw" in payload:
+            segment_note = ""
+            if price_segment and price_segment != "УКАЗАННЫЙ В ЗАПРОСЕ":
+                if price_segment == "ПРЕМИУМ":
+                    forbidden_words = "бюджет, эконом, дешевый, недорогой"
+                elif price_segment == "БЮДЖЕТНЫЙ":
+                    forbidden_words = "премиум, люкс, элитный, премиальный"
+                elif price_segment == "СРЕДНИЙ":
+                    forbidden_words = "премиум, люкс, бюджет, эконом"
+                else:
+                    forbidden_words = ""
+                
+                if forbidden_words:
+                    segment_note = f"\nКРИТИЧЕСКИ ВАЖНО: Заведение относится к сегменту {price_segment}. ЗАПРЕЩЕНО упоминать слова: {forbidden_words}."
+            
             payload = await client.complete_json(
                 system="Ты — конвертор данных в строгий JSON.",
                 user=f"""Преобразуй текст ниже в валидный JSON:
 {{
   "establishment_id": "{est.id}",
   "avg_rating": число,
-  "overall_opinion": "развёрнутое описание (8-12 предложений) с особенностями и нюансами",
+  "overall_opinion": "аналитическое описание (8-12 предложений) в доступном стиле",
   "pros": ["строка", "строка"],
   "cons": ["строка", "строка"]
 }}
 
-ВАЖНО: overall_opinion должен быть развёрнутым (8-12 предложений) с описанием всех особенностей и нюансов заведения.
+ВАЖНО: overall_opinion должен быть развёрнутым аналитическим описанием (8-12 предложений) в стиле, среднем между бизнес-аналитическим и обычным. Используй понятный язык, но сохраняй аналитический подход к описанию бизнес-модели, операционных показателей, конкурентных преимуществ и рисков.{segment_note}
 
 Текст для преобразования:
 {str(payload.get("_raw", ""))[:7000]}""",
@@ -141,13 +178,13 @@ async def _fetch_reviews_one_llm(est: Establishment, config: AppConfig) -> Revie
         )
 
 
-async def fetch_reviews_batch(establishments: List[Establishment], config: AppConfig | None = None) -> Dict[str, ReviewSummary]:
+async def fetch_reviews_batch(establishments: List[Establishment], config: AppConfig | None = None, price_segment: str = "", segment_keywords: str = "") -> Dict[str, ReviewSummary]:
     import sys
     cfg = config or load_config()
     summaries: Dict[str, ReviewSummary] = {}
     print(f"[Отзывы] Начинаю сбор отзывов для {len(establishments)} заведений...", file=sys.stderr)
     for idx, est in enumerate(establishments, 1):
-        summaries[est.id] = await _fetch_reviews_one_llm(est, cfg)
+        summaries[est.id] = await _fetch_reviews_one_llm(est, cfg, price_segment, segment_keywords)
         if (cfg.log_level or "").upper() == "DEBUG":
             print(f"[Отзывы] Обработано {idx}/{len(establishments)}: {est.name}", file=sys.stderr)
     print(f"[Отзывы] Сбор отзывов завершён", file=sys.stderr)
