@@ -237,22 +237,42 @@ async def _fetch_finance_one_llm(est: Establishment, config: AppConfig) -> Finan
         return snapshot
     except LlmError as exc:
         # Single strict attempt; if fails, return empty
+        import sys
         if (config.log_level or "").upper() == "DEBUG":
-            print(f"[finance-llm-error] establishment_id={est.id} name={est.name}: {exc} -> strict")
-        payload = await client.complete_json(
-            system=FINANCE_SYSTEM_PROMPT,
-            user=_build_finance_user_prompt_strict(est),
-            max_tokens=3500,
-        )
-        if isinstance(payload, dict) and "_raw" in payload:
-            if (config.log_level or "").upper() == "DEBUG":
-                print(f"[finance-llm-coerce-strict] establishment_id={est.id} got _raw after strict, coercing")
+            print(f"[finance-llm-error] establishment_id={est.id} name={est.name}: {exc} -> strict", file=sys.stderr)
+        try:
             payload = await client.complete_json(
-                system="Ты — конвертор данных в строгий JSON.",
-                user=_build_coerce_prompt(est, str(payload.get("_raw", ""))),
-                max_tokens=3000,
+                system=FINANCE_SYSTEM_PROMPT,
+                user=_build_finance_user_prompt_strict(est),
+                max_tokens=3500,
             )
-        return _parse_finance_payload(est.id, payload)
+            if isinstance(payload, dict) and "_raw" in payload:
+                if (config.log_level or "").upper() == "DEBUG":
+                    print(f"[finance-llm-coerce-strict] establishment_id={est.id} got _raw after strict, coercing", file=sys.stderr)
+                payload = await client.complete_json(
+                    system="Ты — конвертор данных в строгий JSON.",
+                    user=_build_coerce_prompt(est, str(payload.get("_raw", ""))),
+                    max_tokens=3000,
+                )
+            return _parse_finance_payload(est.id, payload)
+        except LlmError:
+            # Если и retry не сработал, возвращаем пустой результат
+            if (config.log_level or "").upper() == "DEBUG":
+                print(f"[finance-llm-failed] establishment_id={est.id} name={est.name}: все попытки не удались", file=sys.stderr)
+            return FinanceSnapshot(
+                establishment_id=est.id,
+                avg_check=None,
+                min_revenue=None,
+                max_revenue=None,
+                avg_revenue=None,
+                min_expenses=None,
+                max_expenses=None,
+                avg_expenses=None,
+                min_income=None,
+                max_income=None,
+                avg_income=None,
+                source="error",
+            )
 
 
 async def fetch_finance_batch(establishments: List[Establishment], config: AppConfig | None = None) -> Dict[str, FinanceSnapshot]:
@@ -260,11 +280,26 @@ async def fetch_finance_batch(establishments: List[Establishment], config: AppCo
     cfg = config or load_config()
     results: Dict[str, FinanceSnapshot] = {}
     print(f"[Финансы] Начинаю сбор финансовых данных для {len(establishments)} заведений...", file=sys.stderr)
+    success_count = 0
+    failed_count = 0
     for idx, est in enumerate(establishments, 1):
-        results[est.id] = await _fetch_finance_one_llm(est, cfg)
+        snapshot = await _fetch_finance_one_llm(est, cfg)
+        results[est.id] = snapshot
+        # Проверяем, есть ли хотя бы одно поле заполнено
+        has_data = any([
+            snapshot.avg_check is not None,
+            snapshot.avg_revenue is not None,
+            snapshot.avg_expenses is not None,
+            snapshot.avg_income is not None,
+        ])
+        if has_data:
+            success_count += 1
+        else:
+            failed_count += 1
+            print(f"[Финансы] Предупреждение: для {est.name} (id={est.id}) не удалось получить финансовые данные", file=sys.stderr)
         if (cfg.log_level or "").upper() == "DEBUG":
             print(f"[Финансы] Обработано {idx}/{len(establishments)}: {est.name}", file=sys.stderr)
-    print(f"[Финансы] Сбор финансовых данных завершён", file=sys.stderr)
+    print(f"[Финансы] Сбор финансовых данных завершён: успешно {success_count}, неудачно {failed_count}", file=sys.stderr)
     return results
 
 

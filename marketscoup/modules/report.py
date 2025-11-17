@@ -291,8 +291,48 @@ async def _generate_niche_description(analysis: AggregatedAnalysis, config: AppC
     except LlmError as e:
         import sys
         if (config.log_level or "").upper() == "DEBUG":
-            print(f"[Отчёт] Описание ниши: ошибка LLM - {e}", file=sys.stderr)
-        return "Не удалось сгенерировать описание ниши (ошибка LLM)."
+            print(f"[Отчёт] Описание ниши: ошибка LLM - {e}, пробую retry", file=sys.stderr)
+        # Retry с более строгим промптом
+        try:
+            retry_prompt = "\n".join([
+                f"Запрос пользователя: {analysis.query}",
+                "",
+                "Информация о найденных заведениях:",
+                "\n".join(f"{i+1}. {s}" for i, s in enumerate(establishments_summary)),
+                "",
+                "Сформируй развёрнутое описание ниши на основе этой информации. Верни СТРОГО валидный JSON:",
+                '{"niche_description": "развёрнутый текст описания ниши"}',
+                "",
+                "ВАЖНО: niche_description должен содержать развёрнутое описание ниши (не просто 'текст описания', а реальное описание).",
+            ])
+            payload = await client.complete_json(
+                system="Ты — аналитик рынка. Верни СТРОГО валидный JSON без пояснений, текста до/после и без markdown.",
+                user=retry_prompt,
+                max_tokens=2000,
+            )
+            
+            # Извлекаем описание из ответа
+            if isinstance(payload, dict):
+                description = (
+                    payload.get("niche_description") 
+                    or payload.get("description")
+                    or payload.get("text")
+                    or payload.get("content")
+                )
+                if description:
+                    desc_str = str(description).strip()
+                    if desc_str and desc_str.lower() not in ["текст описания", "описание", "text", "none", "null"]:
+                        if (config.log_level or "").upper() == "DEBUG":
+                            print(f"[Отчёт] Описание ниши успешно извлечено после retry (длина: {len(desc_str)})", file=sys.stderr)
+                        return desc_str
+            
+            if (config.log_level or "").upper() == "DEBUG":
+                print(f"[Отчёт] Описание ниши: retry не помог, payload={payload}", file=sys.stderr)
+            return "Не удалось сгенерировать описание ниши."
+        except LlmError as retry_exc:
+            if (config.log_level or "").upper() == "DEBUG":
+                print(f"[Отчёт] Описание ниши: retry также не удался - {retry_exc}", file=sys.stderr)
+            return "Не удалось сгенерировать описание ниши (ошибка LLM)."
 
 
 def _format_establishment_table(items: List[AggregatedEstablishment], font_name: str = "Helvetica") -> Table:
@@ -440,7 +480,17 @@ def generate_pdf_report(analysis: AggregatedAnalysis, niche_description: str, bu
     )
     
     # Проверяем, что описание ниши не пустое
-    if niche_description and niche_description.strip() and niche_description != "Не удалось сгенерировать описание ниши." and niche_description != "Не удалось сгенерировать описание ниши (ошибка LLM).":
+    # Проверяем, что описание ниши не пустое и не является сообщением об ошибке
+    is_valid_niche = (
+        niche_description 
+        and niche_description.strip() 
+        and niche_description != "Не удалось сгенерировать описание ниши." 
+        and niche_description != "Не удалось сгенерировать описание ниши (ошибка LLM)."
+        and len(niche_description.strip()) > 50  # Минимальная длина для реального описания
+    )
+    if is_valid_niche:
+        # Заменяем символ рубля на "руб." для корректного отображения в PDF
+        niche_description = niche_description.replace("₽", "руб.").replace("₽ ", "руб. ")
         # Разбиваем на абзацы для лучшей читаемости
         paragraphs = niche_description.split("\n\n")
         for para in paragraphs:
@@ -567,7 +617,17 @@ def generate_pdf_report(analysis: AggregatedAnalysis, niche_description: str, bu
         spaceAfter=8,
     )
     
-    if business_recommendations and business_recommendations.strip() and business_recommendations != "Не удалось сгенерировать бизнес-рекомендации." and business_recommendations != "Не удалось сгенерировать бизнес-рекомендации (ошибка LLM).":
+    # Проверяем, что бизнес-рекомендации не пустые и не являются сообщением об ошибке
+    is_valid_recommendations = (
+        business_recommendations 
+        and business_recommendations.strip() 
+        and business_recommendations != "Не удалось сгенерировать бизнес-рекомендации." 
+        and business_recommendations != "Не удалось сгенерировать бизнес-рекомендации (ошибка LLM)."
+        and len(business_recommendations.strip()) > 50  # Минимальная длина для реальных рекомендаций
+    )
+    if is_valid_recommendations:
+        # Заменяем символ рубля на "руб." для корректного отображения в PDF
+        business_recommendations = business_recommendations.replace("₽", "руб.").replace("₽ ", "руб. ")
         # Разбиваем на абзацы для лучшей читаемости
         paragraphs = business_recommendations.split("\n\n")
         for para in paragraphs:

@@ -104,7 +104,15 @@ def _parse_reviews_payload(establishment_id: str, payload: Any) -> ReviewSummary
     )
 
 
+def _build_reviews_user_prompt_strict(est: Establishment, price_segment: str = "", segment_keywords: str = "") -> str:
+    """Строгая версия промпта для retry."""
+    base_prompt = _build_reviews_user_prompt(est, price_segment, segment_keywords)
+    return base_prompt + "\n\nКРИТИЧЕСКИ ВАЖНО: Верни СТРОГО валидный JSON без каких-либо пояснений, текста до/после и без markdown. Только один JSON-объект."
+
+
 async def _fetch_reviews_one_llm(est: Establishment, config: AppConfig, price_segment: str = "", segment_keywords: str = "") -> ReviewSummary:
+    import sys
+    
     if not config.llm_api_key:
         return ReviewSummary(
             establishment_id=est.id,
@@ -166,16 +174,65 @@ async def _fetch_reviews_one_llm(est: Establishment, config: AppConfig, price_se
         
         return _parse_reviews_payload(est.id, payload)
     
-    except LlmError:
-        return ReviewSummary(
-            establishment_id=est.id,
-            avg_rating=None,
-            reviews_count=0,
-            sentiment_score=None,
-            overall_opinion=None,
-            pros=[],
-            cons=[],
-        )
+    except LlmError as exc:
+        # Retry with strict prompt
+        if (config.log_level or "").upper() == "DEBUG":
+            print(f"[reviews-llm-error] establishment_id={est.id} name={est.name}: {exc} -> retry with strict", file=sys.stderr)
+        try:
+            payload = await client.complete_json(
+                system=REVIEWS_SYSTEM_PROMPT,
+                user=_build_reviews_user_prompt_strict(est, price_segment, segment_keywords),
+                max_tokens=6000,
+            )
+            
+            # If still raw, try coercion
+            if isinstance(payload, dict) and "_raw" in payload:
+                segment_note = ""
+                if price_segment and price_segment != "УКАЗАННЫЙ В ЗАПРОСЕ":
+                    if price_segment == "ПРЕМИУМ":
+                        forbidden_words = "бюджет, эконом, дешевый, недорогой"
+                    elif price_segment == "БЮДЖЕТНЫЙ":
+                        forbidden_words = "премиум, люкс, элитный, премиальный"
+                    elif price_segment == "СРЕДНИЙ":
+                        forbidden_words = "премиум, люкс, бюджет, эконом"
+                    else:
+                        forbidden_words = ""
+                    
+                    if forbidden_words:
+                        segment_note = f"\nКРИТИЧЕСКИ ВАЖНО: Заведение относится к сегменту {price_segment}. ЗАПРЕЩЕНО упоминать слова: {forbidden_words}."
+                
+                payload = await client.complete_json(
+                    system="Ты — конвертор данных в строгий JSON.",
+                    user=f"""Преобразуй текст ниже в валидный JSON:
+{{
+  "establishment_id": "{est.id}",
+  "avg_rating": число,
+  "overall_opinion": "аналитическое описание (8-12 предложений) в доступном стиле",
+  "pros": ["строка", "строка"],
+  "cons": ["строка", "строка"]
+}}
+
+ВАЖНО: overall_opinion должен быть развёрнутым аналитическим описанием (8-12 предложений) в стиле, среднем между бизнес-аналитическим и обычным. Используй понятный язык, но сохраняй аналитический подход к описанию бизнес-модели, операционных показателей, конкурентных преимуществ и рисков.{segment_note}
+
+Текст для преобразования:
+{str(payload.get("_raw", ""))[:7000]}""",
+                    max_tokens=6000,
+                )
+            
+            return _parse_reviews_payload(est.id, payload)
+        except LlmError:
+            # Если и retry не сработал, возвращаем пустой результат
+            if (config.log_level or "").upper() == "DEBUG":
+                print(f"[reviews-llm-failed] establishment_id={est.id} name={est.name}: все попытки не удались", file=sys.stderr)
+            return ReviewSummary(
+                establishment_id=est.id,
+                avg_rating=None,
+                reviews_count=0,
+                sentiment_score=None,
+                overall_opinion=None,
+                pros=[],
+                cons=[],
+            )
 
 
 async def fetch_reviews_batch(establishments: List[Establishment], config: AppConfig | None = None, price_segment: str = "", segment_keywords: str = "") -> Dict[str, ReviewSummary]:
@@ -183,9 +240,24 @@ async def fetch_reviews_batch(establishments: List[Establishment], config: AppCo
     cfg = config or load_config()
     summaries: Dict[str, ReviewSummary] = {}
     print(f"[Отзывы] Начинаю сбор отзывов для {len(establishments)} заведений...", file=sys.stderr)
+    success_count = 0
+    failed_count = 0
     for idx, est in enumerate(establishments, 1):
-        summaries[est.id] = await _fetch_reviews_one_llm(est, cfg, price_segment, segment_keywords)
+        summary = await _fetch_reviews_one_llm(est, cfg, price_segment, segment_keywords)
+        summaries[est.id] = summary
+        # Проверяем, есть ли хотя бы одно поле заполнено
+        has_data = any([
+            summary.avg_rating is not None,
+            summary.overall_opinion is not None and summary.overall_opinion.strip(),
+            summary.pros,
+            summary.cons,
+        ])
+        if has_data:
+            success_count += 1
+        else:
+            failed_count += 1
+            print(f"[Отзывы] Предупреждение: для {est.name} (id={est.id}) не удалось получить отзывы", file=sys.stderr)
         if (cfg.log_level or "").upper() == "DEBUG":
             print(f"[Отзывы] Обработано {idx}/{len(establishments)}: {est.name}", file=sys.stderr)
-    print(f"[Отзывы] Сбор отзывов завершён", file=sys.stderr)
+    print(f"[Отзывы] Сбор отзывов завершён: успешно {success_count}, неудачно {failed_count}", file=sys.stderr)
     return summaries
