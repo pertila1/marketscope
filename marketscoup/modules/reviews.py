@@ -129,7 +129,7 @@ async def _fetch_reviews_one_llm(est: Establishment, config: AppConfig, price_se
         api_key=config.llm_api_key,
         model=config.llm_model or "sonar-reasoning-pro",
     )
-    client = get_llm_client(settings)
+    client = get_llm_client(settings, use_langchain=config.use_langchain)
     
     try:
         payload = await client.complete_json(

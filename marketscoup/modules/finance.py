@@ -194,7 +194,7 @@ async def _fetch_finance_one_llm(est: Establishment, config: AppConfig) -> Finan
         api_key=config.llm_api_key,
         model=config.llm_model or "sonar-reasoning-pro",
     )
-    client = get_llm_client(settings)
+    client = get_llm_client(settings, use_langchain=config.use_langchain)
 
     try:
         if (config.log_level or "").upper() == "DEBUG":

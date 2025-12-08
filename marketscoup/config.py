@@ -19,10 +19,14 @@ class AppConfig:
     llm_provider: Optional[str]
     llm_api_key: Optional[str]
     llm_model: Optional[str]
+    use_langchain: bool  # Флаг для использования LangChain вместо старого клиента
 
 
 def load_config() -> AppConfig:
     load_dotenv()
+    # По умолчанию используем LangChain, если явно не указано иное
+    use_langchain_env = os.getenv("USE_LANGCHAIN", "true").lower()
+    use_langchain = use_langchain_env in ("true", "1", "yes")
     return AppConfig(
         spark_api_base_url=os.getenv("SPARK_API_BASE_URL"),
         spark_api_token=os.getenv("SPARK_API_TOKEN"),
@@ -34,6 +38,7 @@ def load_config() -> AppConfig:
         llm_provider=os.getenv("LLM_PROVIDER", "perplexity"),
         llm_api_key=os.getenv("LLM_API_KEY"),
         llm_model=os.getenv("LLM_MODEL", "sonar-reasoning-pro"),
+        use_langchain=use_langchain,
     )
 
 

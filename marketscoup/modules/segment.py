@@ -193,7 +193,7 @@ async def find_similar_establishments(query: str, top_n: int = 10) -> SegmentRes
         api_key=config.llm_api_key,
         model=config.llm_model or "sonar-reasoning-pro",
     )
-    client = get_llm_client(settings)
+    client = get_llm_client(settings, use_langchain=config.use_langchain)
 
     try:
         if debug:

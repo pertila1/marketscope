@@ -75,10 +75,27 @@ class PerplexityClient:
                 return {"_raw": text}
 
 
-def get_llm_client(settings: LlmSettings):
+def get_llm_client(settings: LlmSettings, use_langchain: bool = False):
+    """
+    Создает LLM клиент. Поддерживает как старый, так и новый LangChain-клиент.
+    
+    Args:
+        settings: Настройки LLM
+        use_langchain: Если True, использует LangChain клиент, иначе старый
+    
+    Returns:
+        LLM клиент (PerplexityClient или LangChainPerplexityClient)
+    """
     provider = settings.provider.strip().lower()
+    
     if provider == "perplexity":
-        return PerplexityClient(api_key=settings.api_key, model=settings.model)
+        if use_langchain:
+            # Импортируем LangChain клиент
+            from .client_langchain import get_langchain_llm_client
+            return get_langchain_llm_client(settings)
+        else:
+            return PerplexityClient(api_key=settings.api_key, model=settings.model)
+    
     raise LlmError(f"Unsupported LLM provider: {settings.provider}")
 
 

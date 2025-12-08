@@ -118,7 +118,7 @@ async def _generate_business_recommendations(analysis: AggregatedAnalysis, confi
         api_key=config.llm_api_key,
         model=config.llm_model or "sonar-reasoning-pro",
     )
-    client = get_llm_client(settings)
+    client = get_llm_client(settings, use_langchain=config.use_langchain)
     
     try:
         payload = await client.complete_json(
@@ -237,7 +237,7 @@ async def _generate_niche_description(analysis: AggregatedAnalysis, config: AppC
         api_key=config.llm_api_key,
         model=config.llm_model or "sonar-reasoning-pro",
     )
-    client = get_llm_client(settings)
+    client = get_llm_client(settings, use_langchain=config.use_langchain)
     
     try:
         import sys
