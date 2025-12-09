@@ -1,0 +1,5 @@
+npm uninstall tailwindcss @tailwindcss/postcss postcss autoprefixer
+npm install -D tailwindcss@3.3.0 postcss@8.4.0 autoprefixer@10.4.0
+npm install jspdf html2canvas
+
+npm run dev
