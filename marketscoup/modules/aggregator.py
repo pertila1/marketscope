@@ -26,32 +26,43 @@ def _correct_avg_check_by_segment(avg_check: float, price_segment: str) -> float
     corrected = None
     
     if price_segment == "БЮДЖЕТНЫЙ":
-        # Бюджетный: до 1500-1700 руб
-        # ПРИНУДИТЕЛЬНО приводим все значения к диапазону
-        if avg_check > 1700:
-            corrected = 1600.0  # Середина диапазона
-        elif avg_check < 500:
+        # Бюджетный: до 1500 руб (строго)
+        # ПРИНУДИТЕЛЬНО приводим все значения к диапазону 800-1500
+        if avg_check > 1500:
+            corrected = 1200.0  # Типичное значение для бюджетного сегмента
+        elif avg_check < 800:
             corrected = 1000.0  # Минимальное разумное значение
         else:
-            # Если значение в диапазоне 500-1700, оставляем как есть
+            # Если значение в диапазоне 800-1500, оставляем как есть
             return avg_check
     
     elif price_segment == "СРЕДНИЙ":
-        # Средний: 1500-3000 руб
-        # ПРИНУДИТЕЛЬНО приводим все значения к диапазону
+        # Средний: 1500-3000 руб (строго)
+        # ПРИНУДИТЕЛЬНО приводим все значения к диапазону 1500-3000
         if avg_check < 1500:
-            corrected = 2250.0  # Середина диапазона
+            # Если меньше 1500, устанавливаем минимум 1500 или типичное значение 2000-2500
+            if avg_check < 1000:
+                corrected = 2000.0  # Типичное значение для среднего сегмента
+            else:
+                corrected = 1800.0  # Близко к минимуму, но в диапазоне
         elif avg_check > 3000:
-            corrected = 2250.0  # Середина диапазона
+            # Если больше 3000, устанавливаем максимум 3000 или типичное значение 2500-2800
+            if avg_check > 4000:
+                corrected = 2500.0  # Типичное значение для среднего сегмента
+            else:
+                corrected = 2800.0  # Близко к максимуму, но в диапазоне
         else:
             # Если значение в диапазоне 1500-3000, оставляем как есть
             return avg_check
     
     elif price_segment == "ПРЕМИУМ":
-        # Премиум: от 3000 руб
-        # ПРИНУДИТЕЛЬНО приводим все значения < 3000 к минимуму 3000 или типичному 3500
+        # Премиум: от 3000 руб (строго)
+        # ПРИНУДИТЕЛЬНО приводим все значения < 3000 к минимуму 3000 или типичному 3500-4000
         if avg_check < 3000:
-            corrected = 3500.0  # Типичное значение для премиум
+            if avg_check < 2000:
+                corrected = 4000.0  # Типичное значение для премиум сегмента
+            else:
+                corrected = 3500.0  # Близко к минимуму, но в диапазоне
         else:
             # Если значение >= 3000, оставляем как есть
             return avg_check
@@ -169,6 +180,7 @@ def aggregate(
             
             # ВСЕГДА обновляем FinanceSnapshot, если значение было скорректировано
             # Используем точное сравнение с небольшой погрешностью для float
+            # ВАЖНО: обновляем даже если разница небольшая, чтобы гарантировать корректность
             if abs(corrected_avg_check - original_avg_check) > 0.01:
                 # Используем model_copy для Pydantic v2 или создаём новый объект
                 if hasattr(fin, 'model_copy'):
@@ -178,6 +190,17 @@ def aggregate(
                     fin_dict = fin.dict() if hasattr(fin, 'dict') else fin.model_dump()
                     fin_dict['avg_check'] = corrected_avg_check
                     fin = FinanceSnapshot(**fin_dict)
+            # Дополнительная проверка: если значение выходит за границы сегмента, принудительно корректируем
+            elif price_segment == "СРЕДНИЙ" and (original_avg_check < 1500 or original_avg_check > 3000):
+                # Если значение все еще выходит за границы, принудительно устанавливаем типичное значение
+                forced_value = 2250.0
+                if hasattr(fin, 'model_copy'):
+                    fin = fin.model_copy(update={'avg_check': forced_value})
+                else:
+                    fin_dict = fin.dict() if hasattr(fin, 'dict') else fin.model_dump()
+                    fin_dict['avg_check'] = forced_value
+                    fin = FinanceSnapshot(**fin_dict)
+                print(f"[aggregator] ПРИНУДИТЕЛЬНАЯ корректировка среднего чека (дополнительная проверка) для сегмента {price_segment}: {original_avg_check:.0f} -> {forced_value:.0f}", file=sys.stderr)
         
         # Исправляем средний чек и удаляем слова из других сегментов в overall_opinion
         if rev and rev.overall_opinion:
