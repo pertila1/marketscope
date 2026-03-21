@@ -70,5 +70,37 @@ marketscope/
 - Python 3.11+
 - API ключ для LLM провайдера (Perplexity по умолчанию)
 
+---
+
+## Папка `mark/` — рабочая область веб-продукта
+
+В репозитории каталог **`mark/`** — это отдельная «среда разработки» для актуальной версии дашборда и интеграции с **Supabase**. Он добавлен в git **дополнительно** к корневому Python-проекту (`marketscoup` и см. разделы выше): старые разделы README про CLI и структуру `marketscope/` **не заменяют** описание ниже.
+
+### Назначение
+
+| Путь | Назначение |
+|------|------------|
+| **`mark/MarketScope/`** | Фронтенд (**React + Vite + TypeScript**), подключение к БД, личный кабинет, подписка/платежи (Stripe через Edge Functions), миграции SQL. |
+| **`mark/MarketScope/supabase/`** | Миграции (`migrations/`), Edge Functions (`functions/`: ingest, метрики, конкуренты, оплата и webhook). |
+| **`mark/tmp 2/`** | Схемы и примеры JSON для пайплайнов **competitive** и **market** (входы/выходы блоков). |
+| **`mark/scripts/`** | Вспомогательные скрипты (в т.ч. импорт данных). |
+| **`mark/DATA_FLOW.md`** | Подробнее про поток данных и интеграцию. |
+| **`mark/db_schema.sql`**, **`mark/import_to_db.ts`** | Артефакты работы со схемой/импортом (см. комментарии в файлах при необходимости). |
+
+### Быстрый старт (приложение в `mark/MarketScope`)
+
+1. Перейти в каталог: `cd mark/MarketScope`.
+2. Установить зависимости: `npm install`.
+3. Создать **`mark/MarketScope/.env`** с `VITE_SUPABASE_URL` и `VITE_SUPABASE_ANON_KEY` (секреты в git не коммитятся).
+4. Применить миграции в проекте Supabase (файлы в `mark/MarketScope/supabase/migrations/`).
+5. Запуск dev-сервера: `npm run dev`.
+
+Полная инструкция по БД, ingest и Edge Functions — в **`mark/MarketScope/README.md`**.
+
+### Связь с остальным репозиторием
+
+- Корневой **`marketscoup/`** (Python, LLM, CLI) и папка **`mark/`** могут сосуществовать: Python-часть отвечает за офлайн/LLM-пайплайн, **`mark/`** — за веб-интерфейс и хранение в Supabase.
+- Исторические каталоги **`MarketScope/`**, **`project/`**, **`tmp/`** в **корне** репозитория в git **не отслеживаются** (см. `.gitignore`); актуальная веб-часть — в **`mark/MarketScope/`**.
+
 
 
