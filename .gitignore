@@ -45,3 +45,8 @@ Thumbs.db
 *.pdf
 *.log
 
+# Intentionally not in repo (use mark/ for app & data)
+/MarketScope/
+/project/
+/tmp/
+
