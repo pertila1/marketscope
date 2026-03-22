@@ -100,7 +100,7 @@ marketscope/
 ### Деплой фронта на [Vercel](https://vercel.com)
 
 1. Зайди на Vercel → **Add New… → Project** → импортируй репозиторий `pertila1/marketscope` (или свой fork).
-2. **Root Directory** можно оставить **пустым (корень репозитория)** — в корне лежит **`vercel.json`**, который явно собирает Vite из `mark/MarketScope` (иначе Vercel видит `pyproject.toml` и пытается собрать **Python**). Либо укажи **Root Directory**: `mark/MarketScope` — тогда подхватится `mark/MarketScope/vercel.json`.
+2. **Root Directory** — **корень репозитория** (пусто). В корне есть **`package.json`** с **npm workspaces** (фронт — workspace `competitor-dashboard` в `mark/MarketScope`) и **`vercel.json`**: так Vercel выбирает **Node/Vite**, а не **Python** из `pyproject.toml`. Альтернатива: **Root Directory** = `mark/MarketScope` и Framework Preset **Vite** в настройках проекта.
 3. Framework: **Vite** (подхватится из `vercel.json`). Сборка: `npm run build`, выход: `dist`.
 4. **Environment Variables** (для Production / Preview):
    - `VITE_SUPABASE_URL` — URL проекта Supabase  

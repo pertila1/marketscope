@@ -1,0 +1,16 @@
+{
+  "name": "marketscope-monorepo",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Корневой package.json — чтобы Vercel не выбирал Python из pyproject.toml. Фронт: workspace competitor-dashboard.",
+  "workspaces": [
+    "mark/MarketScope"
+  ],
+  "scripts": {
+    "build": "npm run build -w competitor-dashboard",
+    "dev": "npm run dev -w competitor-dashboard"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
