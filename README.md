@@ -97,6 +97,19 @@ marketscope/
 
 Полная инструкция по БД, ingest и Edge Functions — в **`mark/MarketScope/README.md`**.
 
+### Деплой фронта на [Vercel](https://vercel.com)
+
+1. Зайди на Vercel → **Add New… → Project** → импортируй репозиторий `pertila1/marketscope` (или свой fork).
+2. В настройках проекта укажи **Root Directory**: `mark/MarketScope` (важно: монорепо).
+3. Framework: **Vite** (подхватится из `vercel.json`). Сборка: `npm run build`, выход: `dist`.
+4. **Environment Variables** (для Production / Preview):
+   - `VITE_SUPABASE_URL` — URL проекта Supabase  
+   - `VITE_SUPABASE_ANON_KEY` — anon public key  
+   Пример переменных — в **`mark/MarketScope/.env.example`**.
+5. **Deploy**. После выдачи домена `*.vercel.app` добавь этот URL в Supabase: **Authentication → URL Configuration** → **Site URL** и при необходимости **Redirect URLs** (для входа и magic link).
+
+Подробнее по шагам — в **`mark/MarketScope/README.md`** (раздел «Деплой на Vercel»).
+
 ### Связь с остальным репозиторием
 
 - Корневой **`marketscoup/`** (Python, LLM, CLI) и папка **`mark/`** могут сосуществовать: Python-часть отвечает за офлайн/LLM-пайплайн, **`mark/`** — за веб-интерфейс и хранение в Supabase.

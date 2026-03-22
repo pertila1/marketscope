@@ -81,6 +81,21 @@ Edge Function `ingest` принимает payload вида `{ "blocks": { "block
 - `npm run dev` — приложение подхватит `VITE_SUPABASE_*` из `.env`.
 - Данные запрашиваются из Supabase (хук `useDashboardData`). Если БД недоступна или запрос падает, отображаются мок-данные.
 
+### 5. Деплой на Vercel
+
+1. [Vercel](https://vercel.com) → **Add New → Project** → подключи GitHub-репозиторий.
+2. **Root Directory**: `mark/MarketScope` (обязательно — иначе Vercel не найдёт `package.json` фронта).
+3. Сборка подхватывается из **`vercel.json`**: `npm ci`, `npm run build`, статика из **`dist`**.
+4. **Settings → Environment Variables** (Production и при желании Preview):
+   - `VITE_SUPABASE_URL`
+   - `VITE_SUPABASE_ANON_KEY`  
+   Шаблон: **`.env.example`** в этой папке. Без них сайт откроется, но авторизация и данные из Supabase работать не будут.
+5. После деплоя скопируй URL вида `https://….vercel.app` в Supabase: **Authentication → URL Configuration**:
+   - **Site URL** — продакшен URL;
+   - **Redirect URLs** — тот же URL (и локальный `http://localhost:5173` для разработки).
+
+CLI (альтернатива): из каталога `mark/MarketScope` после `npm i -g vercel` — `vercel` / `vercel --prod` (переменные окружения задаются в дашборде или через `vercel env`).
+
 ---
 
 # React + TypeScript + Vite
