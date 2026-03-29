@@ -47,7 +47,12 @@ yandex_reviews_results*.json
 # Jupyter notebooks (черновики, не исходный код)
 *.ipynb
 
-# Legacy/дубликаты скриптов
+# Legacy/дубликаты скриптов и утилиты
 parse_yandex_reviews copy.py
 parse_yandex_reviews_v2.py
 dashboard.py
+download_encoder.py
+fill_missing_checks.py
+set_premium_avg_check.py
+test_competitive_blocks.py
+test_sentiment.py
