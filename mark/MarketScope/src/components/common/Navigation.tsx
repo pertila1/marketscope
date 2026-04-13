@@ -58,11 +58,16 @@ const Navigation: React.FC<NavigationProps> = ({ activeTab, setActiveTab }) => {
                 {/* Backdrop to dim page + close on click */}
                 <button
                   type="button"
-                  className="fixed inset-0 z-[900] bg-black/25 backdrop-blur-[1px]"
+                  className="fixed inset-0 z-[9000] bg-black/25 backdrop-blur-[1px]"
                   aria-label="Close menu"
                   onClick={() => setOpen(false)}
                 />
-                <div className="absolute left-0 right-0 z-[1000] mt-2 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg">
+                {/* Fixed modal menu to avoid being clipped/covered by page content */}
+                <div
+                  className="fixed left-4 right-4 top-24 z-[9100] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl"
+                  role="menu"
+                  aria-label="Навигация"
+                >
                   <div className="max-h-[70vh] overflow-auto py-1">
                     {tabs.map((tab) => (
                       <button
