@@ -35,7 +35,7 @@ const Navigation: React.FC<NavigationProps> = ({ activeTab, setActiveTab }) => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Mobile: dropdown menu to avoid horizontal scroll */}
         <div className="py-3 sm:hidden">
-          <div className="relative">
+          <div className="relative z-[1000]">
             <button
               type="button"
               onClick={() => setOpen((v) => !v)}
@@ -55,13 +55,14 @@ const Navigation: React.FC<NavigationProps> = ({ activeTab, setActiveTab }) => {
 
             {open ? (
               <>
+                {/* Backdrop to dim page + close on click */}
                 <button
                   type="button"
-                  className="fixed inset-0 z-40"
+                  className="fixed inset-0 z-[900] bg-black/25 backdrop-blur-[1px]"
                   aria-label="Close menu"
                   onClick={() => setOpen(false)}
                 />
-                <div className="absolute left-0 right-0 z-50 mt-2 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg">
+                <div className="absolute left-0 right-0 z-[1000] mt-2 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg">
                   <div className="max-h-[70vh] overflow-auto py-1">
                     {tabs.map((tab) => (
                       <button
