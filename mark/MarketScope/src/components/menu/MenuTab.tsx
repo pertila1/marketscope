@@ -37,48 +37,55 @@ const MenuTab: React.FC<MenuTabProps> = ({
       .filter(Boolean)
       .map((x) => (x.endsWith('.') ? x : `${x}.`));
 
-  const categoryComparison = (() => {
-    const map = new Map<string, Record<string, number>>();
-    filteredMenus.forEach((menu) => {
-      const restName = restaurants.find((r) => r.id === menu.restaurant_id)?.name ?? '';
-      const items = itemsForMenus.filter((i) => i.menu_id === menu.id);
-      const byCat = new Map<string, number[]>();
-      items.forEach((i) => {
-        const list = byCat.get(i.category) ?? [];
-        list.push(i.price);
-        byCat.set(i.category, list);
-      });
-      byCat.forEach((prices, category) => {
-        const avg = prices.length ? Math.round(prices.reduce((a, b) => a + b, 0) / prices.length) : 0;
-        const row = map.get(category) ?? {};
-        row[restName] = avg;
-        map.set(category, row);
-      });
-    });
-    return Array.from(map.entries()).slice(0, 7).map(([category, values]) => ({ category, ...values }));
-  })();
-
-  const categoryCountComparison = (() => {
-    const map = new Map<string, Record<string, number>>();
-    const totals = new Map<string, number>();
+  const { categoriesForCharts, categoryAvgPriceByRestaurant, categoryCountByRestaurant } = (() => {
+    type Agg = { sum: number; count: number };
+    // category -> restaurantName -> {sum, count}
+    const map = new Map<string, Map<string, Agg>>();
+    const totalCounts = new Map<string, number>();
 
     filteredMenus.forEach((menu) => {
       const restName = restaurants.find((r) => r.id === menu.restaurant_id)?.name ?? '';
+      if (!restName) return;
       const items = itemsForMenus.filter((i) => i.menu_id === menu.id);
-      const byCat = new Map<string, number>();
-      items.forEach((i) => byCat.set(i.category, (byCat.get(i.category) ?? 0) + 1));
-      byCat.forEach((count, category) => {
-        const row = map.get(category) ?? {};
-        row[restName] = (row[restName] ?? 0) + count;
-        map.set(category, row);
-        totals.set(category, (totals.get(category) ?? 0) + count);
+      items.forEach((it) => {
+        const category = (it.category ?? '').trim();
+        if (!category) return; // no empty categories on charts
+        const byRest = map.get(category) ?? new Map<string, Agg>();
+        const prev = byRest.get(restName) ?? { sum: 0, count: 0 };
+        byRest.set(restName, { sum: prev.sum + (it.price || 0), count: prev.count + 1 });
+        map.set(category, byRest);
+        totalCounts.set(category, (totalCounts.get(category) ?? 0) + 1);
       });
     });
 
-    return Array.from(map.entries())
-      .sort((a, b) => (totals.get(b[0]) ?? 0) - (totals.get(a[0]) ?? 0))
-      .slice(0, 10)
-      .map(([category, values]) => ({ category, ...values }));
+    // choose same X categories for both charts
+    const categoriesForCharts = Array.from(map.keys())
+      .sort((a, b) => (totalCounts.get(b) ?? 0) - (totalCounts.get(a) ?? 0))
+      .slice(0, 10);
+
+    const categoryAvgPriceByRestaurant = categoriesForCharts.map((category) => {
+      const byRest = map.get(category) ?? new Map<string, Agg>();
+      const row: Record<string, number | string> = { category };
+      filteredRestaurants.forEach((r) => {
+        const restName = r.name;
+        const agg = byRest.get(restName);
+        row[restName] = agg && agg.count ? Math.round(agg.sum / agg.count) : 0;
+      });
+      return row;
+    });
+
+    const categoryCountByRestaurant = categoriesForCharts.map((category) => {
+      const byRest = map.get(category) ?? new Map<string, Agg>();
+      const row: Record<string, number | string> = { category };
+      filteredRestaurants.forEach((r) => {
+        const restName = r.name;
+        const agg = byRest.get(restName);
+        row[restName] = agg?.count ?? 0;
+      });
+      return row;
+    });
+
+    return { categoriesForCharts, categoryAvgPriceByRestaurant, categoryCountByRestaurant };
   })();
 
   return (
@@ -107,11 +114,11 @@ const MenuTab: React.FC<MenuTabProps> = ({
         </ResponsiveContainer>
       </div>
 
-      {categoryComparison.length > 0 && (
+      {categoriesForCharts.length > 0 && (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
           <h3 className="text-lg font-semibold mb-4">Сравнение средней стоимости категорий</h3>
           <ResponsiveContainer width="100%" height={340}>
-            <BarChart data={categoryComparison}>
+            <BarChart data={categoryAvgPriceByRestaurant}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="category" />
               <YAxis />
@@ -125,14 +132,14 @@ const MenuTab: React.FC<MenuTabProps> = ({
         </div>
       )}
 
-      {categoryCountComparison.length > 0 && (
+      {categoriesForCharts.length > 0 && (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
           <h3 className="text-lg font-semibold mb-4">Количество позиций в категориях (сравнение ресторанов)</h3>
           <p className="text-sm text-gray-500 mb-4">
-            Показаны топ-10 категорий по суммарному количеству позиций.
+            Показаны те же категории, что и на графике средней стоимости (топ-10 по суммарному количеству позиций).
           </p>
           <ResponsiveContainer width="100%" height={360}>
-            <BarChart data={categoryCountComparison}>
+            <BarChart data={categoryCountByRestaurant}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="category" />
               <YAxis allowDecimals={false} />
