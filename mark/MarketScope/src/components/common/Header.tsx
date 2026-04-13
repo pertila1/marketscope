@@ -1,6 +1,5 @@
 import React from 'react';
-import { Target, LogOut } from 'lucide-react';
-import { useAuth } from '../../contexts/AuthContext';
+import { Target, User } from 'lucide-react';
 import type { AnalysisRun, ClientRequest } from '../../types';
 
 interface HeaderProps {
@@ -8,10 +7,10 @@ interface HeaderProps {
   runs: AnalysisRun[];
   selectedRequestId: number | null;
   onSelectRequest: (requestId: number) => void;
+  onOpenCabinet?: () => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ requests, selectedRequestId, onSelectRequest }) => {
-  const { signOut } = useAuth();
+const Header: React.FC<HeaderProps> = ({ requests, selectedRequestId, onSelectRequest, onOpenCabinet }) => {
 
   const typeLabel = (t: string) =>
     t === 'market_overview' ? 'Обзор рынка' : t === 'competitive_analysis' ? 'Конкурентный анализ' : t || '—';
@@ -62,12 +61,12 @@ const Header: React.FC<HeaderProps> = ({ requests, selectedRequestId, onSelectRe
             </div>
             <button
               type="button"
-              onClick={() => signOut()}
+              onClick={() => onOpenCabinet?.()}
               className="flex items-center justify-center gap-1.5 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
-              title="Выйти"
+              title="Личный кабинет"
             >
-              <LogOut className="w-4 h-4" />
-              <span>Выйти</span>
+              <User className="w-4 h-4" />
+              <span>Личный кабинет</span>
             </button>
           </div>
         </div>

@@ -18,7 +18,7 @@ interface PersonalCabinetTabProps {
 }
 
 const PersonalCabinetTab: React.FC<PersonalCabinetTabProps> = ({ onOpenSubscription }) => {
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
 
@@ -112,8 +112,19 @@ const PersonalCabinetTab: React.FC<PersonalCabinetTabProps> = ({ onOpenSubscript
   return (
     <div className="space-y-6">
       <div className="mb-4">
-        <h2 className="text-xl font-semibold text-gray-900">Личный кабинет</h2>
-        <p className="text-sm text-gray-500 mt-1">Ваши данные и подписка на MarketScope</p>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-semibold text-gray-900">Личный кабинет</h2>
+            <p className="text-sm text-gray-500 mt-1">Ваши данные и подписка на MarketScope</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => signOut()}
+            className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            Выйти
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
