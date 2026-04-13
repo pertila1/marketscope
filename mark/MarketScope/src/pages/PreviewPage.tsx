@@ -16,8 +16,8 @@ const PreviewPage: React.FC = () => {
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const privacyHref = encodeURI('/docs/Политика Конфиденциальности.docx');
-  const termsHref = encodeURI('/docs/Пользовательское_Соглашение_MarketScope.docx');
+  const privacyHref = encodeURI('/docs/Политика Конфиденциальности.pdf');
+  const termsHref = encodeURI('/docs/Пользовательское_Соглашение_MarketScope.pdf');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

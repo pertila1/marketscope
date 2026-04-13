@@ -54,3 +54,6 @@ Thumbs.db
 /project/
 /tmp/
 
+# Allow publishing legal PDFs for frontend
+!mark/MarketScope/public/docs/*.pdf
+
