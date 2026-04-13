@@ -81,7 +81,8 @@ const Navigation: React.FC<NavigationProps> = ({ activeTab, setActiveTab }) => {
     <div className="bg-white border-b border-gray-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Mobile: dropdown menu to avoid horizontal scroll */}
-        <div className="py-3 sm:hidden">
+        {/* Use dropdown up to lg to avoid text overlap on some devices */}
+        <div className="py-3 lg:hidden">
           <div className="relative z-[1000]">
             <button
               type="button"
@@ -105,13 +106,13 @@ const Navigation: React.FC<NavigationProps> = ({ activeTab, setActiveTab }) => {
         </div>
 
         {/* Desktop: tabs */}
-        <nav className="hidden sm:flex space-x-8" aria-label="Tabs">
+        <nav className="hidden lg:flex flex-wrap gap-x-8" aria-label="Tabs">
           {tabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => onPick(tab.id)}
               className={`
-                py-4 px-1 border-b-2 font-medium text-sm flex items-center space-x-2
+                py-4 px-1 border-b-2 font-medium text-sm flex items-center space-x-2 whitespace-nowrap
                 ${
                   activeTab === tab.id
                     ? 'border-blue-500 text-blue-600'
