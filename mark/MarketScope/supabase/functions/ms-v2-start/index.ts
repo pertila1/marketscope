@@ -55,7 +55,8 @@ Deno.serve(async (req) => {
 
     const authHeader = req.headers.get("Authorization") ?? "";
     const bearer = authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
-    const userJwt = bearer || (req.headers.get("X-User-JWT") ?? "");
+    // Authorization is used to satisfy the gateway (anon JWT). The actual user token comes via X-User-JWT.
+    const userJwt = (req.headers.get("X-User-JWT") ?? "").trim() || bearer;
     if (!userJwt) return json(401, { error: "Missing user JWT (Authorization Bearer or X-User-JWT)" });
     const u = await supabase.auth.getUser(userJwt);
     if (u.error || !u.data.user) return json(401, { error: "Invalid user token" });
