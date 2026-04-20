@@ -376,7 +376,19 @@ Deno.serve(async (req: Request) => {
     // Сохраняем метаданные запроса ДО преобразования v2 blocks (иначе они потеряются)
     const incomingUserId = body.user_id ? String(body.user_id) : null;
     const incomingRequest = body.request ? body.request : undefined;
-    const incomingBlocks = body.blocks && typeof body.blocks === "object" ? (body.blocks as Record<string, unknown>) : null;
+    // blocks иногда приходит строкой (двойная сериализация); null даёт typeof object — отсекаем.
+    let rawBlocks: unknown = body.blocks;
+    if (typeof rawBlocks === "string") {
+      try {
+        rawBlocks = JSON.parse(rawBlocks);
+      } catch {
+        rawBlocks = null;
+      }
+    }
+    const incomingBlocks =
+      rawBlocks != null && typeof rawBlocks === "object" && !Array.isArray(rawBlocks)
+        ? (rawBlocks as Record<string, unknown>)
+        : null;
 
     // v2: если пришли blocks — преобразуем в старый dataset-формат
     if (incomingBlocks) {

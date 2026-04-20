@@ -33,6 +33,20 @@ function toStringSafe(v: unknown): string {
   return "";
 }
 
+/** Redis/API иногда отдают outputs строкой; пустой объект не подходит для v2 ingest без block1. */
+function normalizeOutputs(v: unknown): Record<string, unknown> {
+  let x: unknown = v;
+  if (typeof x === "string") {
+    try {
+      x = JSON.parse(x);
+    } catch {
+      return {};
+    }
+  }
+  if (x && typeof x === "object" && !Array.isArray(x)) return x as Record<string, unknown>;
+  return {};
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -58,25 +72,35 @@ Deno.serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const runId = Number(body.run_id);
+    const forceRepair = body.force === true || body.force_repair === true;
     if (!Number.isFinite(runId) || runId <= 0) return json(400, { error: "run_id is required" });
 
     const { data: runRow, error: runErr } = await supabase
       .from("analysis_runs")
-      .select("id,request_id,report_type,status,progress,job_id,finished_at")
+      .select("id,request_id,report_type,status,progress,job_id,finished_at,outputs,warnings")
       .eq("id", runId)
       .maybeSingle();
     if (runErr) return json(500, { error: errToMessage(runErr) });
     if (!runRow) return json(404, { error: "Run not found" });
 
     const dbStatusEarly = toStringSafe(runRow.status);
-    if ((dbStatusEarly === "done" || dbStatusEarly === "done_partial") && runRow.finished_at) {
-      return json(200, {
-        ok: true,
-        status: dbStatusEarly,
-        progress: toStringSafe(runRow.progress),
-        ingested: false,
-        skipped: "already_finalized",
-      });
+    // Не считаем run «готовым», пока нет строк в restaurants — иначе ingest мог не отработать, а finished_at уже стоит.
+    if ((dbStatusEarly === "done" || dbStatusEarly === "done_partial") && runRow.finished_at && !forceRepair) {
+      const { count, error: cntErr } = await supabase
+        .from("restaurants")
+        .select("id", { count: "exact", head: true })
+        .eq("run_id", runId);
+      const n = cntErr ? -1 : (count ?? 0);
+      if (n > 0) {
+        return json(200, {
+          ok: true,
+          status: dbStatusEarly,
+          progress: toStringSafe(runRow.progress),
+          ingested: false,
+          skipped: "already_finalized",
+        });
+      }
+      // repair: продолжаем — повторный ingest из Redis или из analysis_runs.outputs
     }
 
     // Ownership check via client_requests
@@ -92,15 +116,39 @@ Deno.serve(async (req) => {
     const jobId = toStringSafe(runRow.job_id);
     if (!jobId) return json(400, { error: "Run has no job_id yet" });
 
+    const hasBlock1 = (o: Record<string, unknown>) =>
+      Boolean(o.block1 ?? o.block1_output ?? o["block1_output.json"] ?? o["block1"]);
+    const fromDb = normalizeOutputs(runRow.outputs);
+
     const msRes = await fetch(`${msV2Url}/jobs/${encodeURIComponent(jobId)}`, { method: "GET" });
-    const msJson = await msRes.json().catch(() => ({}));
-    if (!msRes.ok) return json(502, { error: `ms-v2 /jobs failed (${msRes.status})`, details: msJson });
+    const msJsonRaw = await msRes.json().catch(() => ({}));
+    let msJson: Record<string, unknown> =
+      msRes.ok && msJsonRaw && typeof msJsonRaw === "object" && !Array.isArray(msJsonRaw)
+        ? (msJsonRaw as Record<string, unknown>)
+        : {};
+
+    if (!msRes.ok) {
+      // Redis key истёк, но в analysis_runs.outputs уже сохранён JSON — догоняем ingest без ms-v2.
+      if (msRes.status === 404 && hasBlock1(fromDb) && (dbStatusEarly === "done" || dbStatusEarly === "done_partial")) {
+        msJson = {
+          status: dbStatusEarly,
+          progress: toStringSafe(runRow.progress),
+          warnings: runRow.warnings ?? {},
+          outputs: fromDb,
+        };
+      } else {
+        return json(502, { error: `ms-v2 /jobs failed (${msRes.status})`, details: msJsonRaw });
+      }
+    }
 
     const status = toStringSafe(msJson.status);
     const progress = toStringSafe(msJson.progress);
     const warnings = msJson.warnings ?? {};
     const errorText = toStringSafe(msJson.error);
-    const outputs = msJson.outputs ?? {};
+    let outputs = normalizeOutputs(msJson.outputs);
+    if (!hasBlock1(outputs) && hasBlock1(fromDb)) {
+      outputs = fromDb;
+    }
 
     // Persist status/progress early
     await supabase
@@ -136,6 +184,19 @@ Deno.serve(async (req) => {
           .update({ status: "error", error: `ingest failed: ${ingestRes.status}`, finished_at: new Date().toISOString() })
           .eq("id", runId);
         return json(502, { error: "Ingest failed", details: ingestJson });
+      }
+
+      const insertedN = Number((ingestJson as { restaurants?: number }).restaurants ?? 0);
+      if (!Number.isFinite(insertedN) || insertedN <= 0) {
+        await supabase
+          .from("analysis_runs")
+          .update({
+            status: "error",
+            error: "ingest returned 200 but inserted 0 restaurants (missing block1.selected_places?)",
+            finished_at: new Date().toISOString(),
+          })
+          .eq("id", runId);
+        return json(502, { error: "Ingest produced no restaurant rows", details: ingestJson });
       }
 
       await supabase
