@@ -26,6 +26,9 @@ services:
     restart: unless-stopped
     env_file:
       - ./.env.ms-v2
+    environment:
+      # Hard cap to avoid Celery defaulting to high CPU count.
+      CELERY_CONCURRENCY: "1"
     depends_on:
       - redis
     volumes:

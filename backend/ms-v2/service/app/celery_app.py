@@ -18,3 +18,7 @@ celery_app.conf.update(
     worker_prefetch_multiplier=1,  # не брать следующую задачу пока текущая не завершена
     task_acks_late=True,           # подтверждать только после успешного завершения
 )
+
+# Ensure task modules are imported when worker starts.
+# Without this Celery may discard queued tasks as "unregistered".
+from . import tasks  # noqa: E402,F401
