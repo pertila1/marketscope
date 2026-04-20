@@ -52,9 +52,9 @@ export function useClientRequests() {
   const latestRunId = useMemo(() => runs[0]?.id, [runs]);
   const latestRequestId = useMemo(() => requests[0]?.id, [requests]);
 
-  const reload = async () => {
+  const reload = async (opts?: { silent?: boolean }) => {
     try {
-      setLoading(true);
+      if (!opts?.silent) setLoading(true);
       setError(null);
       const [{ data: reqs, error: eReqs }, { data: rns, error: eRuns }] = await Promise.all([
         supabase.from('client_requests').select('*').order('created_at', { ascending: false }),
@@ -67,7 +67,7 @@ export function useClientRequests() {
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Ошибка загрузки запросов');
     } finally {
-      setLoading(false);
+      if (!opts?.silent) setLoading(false);
     }
   };
 

@@ -241,7 +241,7 @@ const CompetitorAnalysisDashboard: React.FC = () => {
     const tick = async () => {
       try {
         await invokeEdgeFunction('ms-v2-poll', { run_id: activeRun.id });
-        if (!cancelled) reloadRequests();
+        if (!cancelled) reloadRequests({ silent: true });
       } catch {
         // ignore transient errors; we'll try again
       }
