@@ -141,6 +141,10 @@ export interface AnalysisRun {
   source_csv?: string;
   top_n?: number;
   perplexity_model?: string;
+  status?: 'created' | 'pending' | 'running' | 'done' | 'done_partial' | 'error' | string;
+  progress?: string;
+  job_id?: string;
+  error?: string;
 }
 
 /** Личный кабинет: профиль клиента */

@@ -76,7 +76,17 @@ const NewRequestTab: React.FC<NewRequestTabProps> = ({ onCreated, onOpenSubscrip
       };
       const { data, error: eIns } = await supabase.from('client_requests').insert(payload).select('*').single();
       if (eIns) throw eIns;
-      setSuccess('Запрос создан. Данные на страницах будут показаны для выбранного запроса.');
+      // Start async ms-v2 pipeline right after request creation
+      const { data: startData, error: startErr } = await supabase.functions.invoke('ms-v2-start', {
+        body: { request_id: (data as ClientRequest).id },
+      });
+      if (startErr) throw startErr;
+
+      setSuccess(
+        startData?.runId
+          ? `Запрос создан. Запущен анализ (run #${startData.runId}). Результаты появятся на вкладках после завершения.`
+          : 'Запрос создан. Анализ запущен. Результаты появятся на вкладках после завершения.'
+      );
       if (data) onCreated?.(data as ClientRequest);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Не удалось создать запрос');

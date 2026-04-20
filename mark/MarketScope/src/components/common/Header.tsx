@@ -10,7 +10,7 @@ interface HeaderProps {
   onOpenCabinet?: () => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ requests, selectedRequestId, onSelectRequest, onOpenCabinet }) => {
+const Header: React.FC<HeaderProps> = ({ requests, runs, selectedRequestId, onSelectRequest, onOpenCabinet }) => {
 
   const typeLabel = (t: string) =>
     t === 'market_overview' ? 'Обзор рынка' : t === 'competitive_analysis' ? 'Конкурентный анализ' : t || '—';
@@ -22,6 +22,15 @@ const Header: React.FC<HeaderProps> = ({ requests, selectedRequestId, onSelectRe
       return dt;
     }
   };
+
+  const activeRun = React.useMemo(() => {
+    if (!selectedRequestId) return null;
+    const list = runs.filter((r) => r.request_id === selectedRequestId);
+    return list.sort((a, b) => (a.created_at < b.created_at ? 1 : -1))[0] ?? null;
+  }, [runs, selectedRequestId]);
+
+  const showRunning = Boolean(activeRun && (activeRun.status === 'pending' || activeRun.status === 'running'));
+  const showError = Boolean(activeRun && activeRun.status === 'error');
 
   return (
     <header className="bg-white shadow-sm border-b border-gray-200">
@@ -37,6 +46,21 @@ const Header: React.FC<HeaderProps> = ({ requests, selectedRequestId, onSelectRe
             <span className="text-sm text-gray-500 truncate">
               Анализ конкурентов HoReCa
             </span>
+            {(showRunning || showError) && (
+              <div className="flex items-center gap-2">
+                {showRunning && (
+                  <span className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-600" />
+                    Идёт анализ{activeRun?.progress ? ` · ${activeRun.progress}` : ''}
+                  </span>
+                )}
+                {showError && (
+                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-rose-50 text-rose-700 border border-rose-200">
+                    Ошибка анализа
+                  </span>
+                )}
+              </div>
+            )}
           </div>
           <div className="flex flex-col sm:flex-row sm:items-center gap-3">
             <div className="flex items-center gap-2 min-w-0">

@@ -42,7 +42,7 @@ interface JsonDataset {
   // v2: новый формат (temp2) — набор блоков block1..block6
   blocks?: Record<string, unknown>;
   // История/мультизапуски
-  request?: { query_text?: string; request_id?: number; params?: Record<string, unknown> };
+  request?: { query_text?: string; request_id?: number; run_id?: number; params?: Record<string, unknown> };
   user_id?: string; // fallback для server-side импорта (когда нет user JWT)
 }
 
@@ -398,6 +398,7 @@ Deno.serve(async (req: Request) => {
     // request + run (можно привязать к существующему request_id)
     const queryText = toStringSafe(body.request?.query_text) || "";
     const incomingRequestId = body.request?.request_id ? Number(body.request.request_id) : null;
+    const incomingRunId = body.request?.run_id ? Number(body.request.run_id) : null;
     const requestType = reportType === "competitive" ? "competitive_analysis" : "market_overview";
 
     let requestId: number;
@@ -437,13 +438,28 @@ Deno.serve(async (req: Request) => {
       requestId = Number((insertedRequest.data as { id: number }).id);
     }
 
-    const insertedRun = await supabase
-      .from("analysis_runs")
-      .insert({ request_id: requestId, report_type: reportType })
-      .select("id")
-      .single();
-    if (insertedRun.error) throw new Error(errToMessage(insertedRun.error));
-    const runId = Number((insertedRun.data as { id: number }).id);
+    let runId: number;
+    if (incomingRunId) {
+      const runRow = await supabase
+        .from("analysis_runs")
+        .select("id,request_id")
+        .eq("id", incomingRunId)
+        .maybeSingle();
+      if (runRow.error) throw new Error(errToMessage(runRow.error));
+      if (!runRow.data) throw new Error("analysis_runs: run_id not found");
+      if (Number((runRow.data as { request_id: number }).request_id) !== Number(requestId)) {
+        throw new Error("analysis_runs: run_id does not belong to request_id");
+      }
+      runId = incomingRunId;
+    } else {
+      const insertedRun = await supabase
+        .from("analysis_runs")
+        .insert({ request_id: requestId, report_type: reportType })
+        .select("id")
+        .single();
+      if (insertedRun.error) throw new Error(errToMessage(insertedRun.error));
+      runId = Number((insertedRun.data as { id: number }).id);
+    }
 
     const restaurants = body.restaurants ?? [];
     if (restaurants.length === 0) {

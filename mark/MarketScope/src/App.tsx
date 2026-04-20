@@ -16,6 +16,7 @@ import NewRequestTab from './components/requests/NewRequestTab';
 import SubscriptionPage from './components/subscription/SubscriptionPage';
 
 import type { Restaurant, CompetitorData } from './types';
+import { supabase } from './lib/supabase';
 import {
   restaurants as mockRestaurants,
   competitors as mockCompetitors,
@@ -221,6 +222,37 @@ const CompetitorAnalysisDashboard: React.FC = () => {
     }
   };
 
+  const activeRun = React.useMemo(() => {
+    if (!activeRequestId) return null;
+    const list = runs.filter((r) => r.request_id === activeRequestId);
+    return list.sort((a, b) => (a.created_at < b.created_at ? 1 : -1))[0] ?? null;
+  }, [runs, activeRequestId]);
+
+  const isRunInProgress = Boolean(activeRun && (activeRun.status === 'pending' || activeRun.status === 'running'));
+  const isRunErrored = Boolean(activeRun && activeRun.status === 'error');
+  const shouldBlurTabsWhileRunning = Boolean(isRunInProgress && dataLoaded && restaurants.length === 0);
+
+  // Poll ms-v2 job status while in progress (client-driven)
+  React.useEffect(() => {
+    if (!activeRun?.id) return;
+    if (!isRunInProgress) return;
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        await supabase.functions.invoke('ms-v2-poll', { body: { run_id: activeRun.id } });
+        if (!cancelled) reloadRequests();
+      } catch {
+        // ignore transient errors; we'll try again
+      }
+    };
+    tick();
+    const t = window.setInterval(tick, 6000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(t);
+    };
+  }, [activeRun?.id, isRunInProgress, reloadRequests]);
+
   if (showAIStrategy) {
     return (
       <AIStrategyPage
@@ -276,7 +308,34 @@ const CompetitorAnalysisDashboard: React.FC = () => {
               </button>
             </div>
           </div>
-        ) : dataLoaded ? renderTabContent() : null}
+        ) : dataLoaded ? (
+          <div className="relative">
+            {shouldBlurTabsWhileRunning && (
+              <div className="absolute inset-0 z-20 flex items-center justify-center">
+                <div className="rounded-xl bg-white/70 backdrop-blur-md border border-gray-200 shadow-sm px-6 py-4 text-center max-w-md">
+                  <div className="text-sm font-semibold text-gray-900">Идёт обработка запроса</div>
+                  <div className="mt-1 text-xs text-gray-600">
+                    Как только микросервис закончит анализ, данные появятся на всех вкладках автоматически.
+                  </div>
+                  {activeRun?.progress && (
+                    <div className="mt-2 text-xs text-gray-700">
+                      Прогресс: <span className="font-medium">{activeRun.progress}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            <div className={shouldBlurTabsWhileRunning ? 'filter blur-sm pointer-events-none select-none opacity-60' : ''}>
+              {renderTabContent()}
+            </div>
+            {isRunErrored && (
+              <div className="mt-4 rounded-lg bg-rose-50 border border-rose-200 p-4 text-rose-800">
+                <div className="font-medium">Анализ завершился с ошибкой</div>
+                <div className="text-sm mt-1">{activeRun?.error || 'Неизвестная ошибка'}</div>
+              </div>
+            )}
+          </div>
+        ) : null}
       </main>
     </div>
   );
