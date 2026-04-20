@@ -83,19 +83,19 @@ const CompetitorAnalysisDashboard: React.FC = () => {
     refetch,
     hasDb,
     activeRunId,
-  } = useDashboardData(latestRunForRequestId ?? undefined);
+  } = useDashboardData(activeRequestId ? latestRunForRequestId : undefined);
 
   const restaurants: Restaurant[] = useMemo(() => {
-    if (hasDb && !dbError && dbRestaurants.length > 0) return dbRestaurants;
+    if (hasDb && !dbError) return dbRestaurants;
     return mockRestaurants;
   }, [hasDb, dbError, dbRestaurants]);
 
   const competitorData: CompetitorData[] = useMemo(() => {
-    if (hasDb && !dbError && dbCompetitorData.length > 0) return dbCompetitorData;
+    if (hasDb && !dbError) return dbCompetitorData;
     return mockCompetitors;
   }, [hasDb, dbError, dbCompetitorData]);
 
-  const useDbData = hasDb && !dbError && dbRestaurants.length > 0;
+  const useDbData = hasDb && !dbError;
   const reviews = useDbData ? dbReviews : mockReviews;
   const technicalAnalysis = useDbData ? dbTechnicalAnalysis : mockTechnicalAnalysis;
   const strategicReport = useDbData ? dbStrategicReport : mockStrategicReport;

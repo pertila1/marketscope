@@ -38,7 +38,7 @@ function mapRowId<T extends Record<string, unknown>>(row: T, idKey: string = 'id
   return row;
 }
 
-export function useDashboardData(runId?: number) {
+export function useDashboardData(runId?: number | null) {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -55,8 +55,26 @@ export function useDashboardData(runId?: number) {
         setLoading(true);
         setError(null);
 
-        // если runId не передали — возьмем самый свежий (по created_at)
-        let rid = runId;
+        // Если runId === null — это явный сигнал "пока нет запусков для выбранного запроса"
+        // (не делаем fallback на самый свежий run в проекте, чтобы не показывать чужие/старые данные).
+        let rid = runId ?? undefined;
+        if (runId === null) {
+          setActiveRunId(null);
+          setData({
+            restaurants: [],
+            menus: [],
+            menuItems: [],
+            reviews: [],
+            marketing: [],
+            marketingSocials: [],
+            marketingLoyalty: [],
+            technicalAnalysis: [],
+            strategicReport: [],
+          });
+          return;
+        }
+
+        // если runId не передали (undefined) — возьмем самый свежий (по created_at)
         if (!rid) {
           const { data: latest, error: eLatest } = await supabase
             .from('analysis_runs')
