@@ -19,6 +19,24 @@ def _project_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
 
+def _chrome_major_version() -> int | None:
+    """Мажорная версия системного Chrome — для undetected_chromedriver version_main."""
+    for path in ("google-chrome", "chromium-browser", "chromium"):
+        try:
+            out = subprocess.check_output(
+                [path, "--version"],
+                stderr=subprocess.DEVNULL,
+                text=True,
+                timeout=5,
+            )
+            m = re.search(r"(\d+)\.", out)
+            if m:
+                return int(m.group(1))
+        except Exception:
+            continue
+    return None
+
+
 def _norm_text(value: str) -> str:
     s = str(value or "").strip().lower().replace("ё", "е")
     s = re.sub(r"[\"'`«»]", "", s)
@@ -594,6 +612,9 @@ def run(
         ]
         if parse_limit is not None:
             cmd += ["--limit", str(parse_limit)]
+        cv = _chrome_major_version()
+        if cv is not None:
+            cmd += ["--chrome-version", str(cv)]
 
         env = os.environ.copy()
         env["PYTHONUNBUFFERED"] = "1"

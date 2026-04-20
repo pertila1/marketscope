@@ -5,7 +5,7 @@ import { createClient } from "npm:@supabase/supabase-js@2.38.4";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey, X-Internal-User-Id",
 };
 
 function errToMessage(err: unknown): string {
@@ -78,8 +78,8 @@ function jwtRole(bearer: string): string | null {
   if (parts.length < 2) return null;
   try {
     const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-    const pad = b64.length % 4 === 0 ? "" : "=".repeat(4 - (b64.length % 4));
-    const json = atob(b64 + pad);
+    const padLen = (4 - (b64.length % 4)) % 4;
+    const json = atob(b64 + "=".repeat(padLen));
     const payload = JSON.parse(json) as { role?: string };
     return typeof payload.role === "string" ? payload.role : null;
   } catch {
@@ -374,7 +374,10 @@ Deno.serve(async (req: Request) => {
     let body = (await req.json()) as JsonDataset;
 
     // Сохраняем метаданные запроса ДО преобразования v2 blocks (иначе они потеряются)
-    const incomingUserId = body.user_id ? String(body.user_id) : null;
+    const rawUser = (body as Record<string, unknown>)["user_id"] ?? (body as Record<string, unknown>)["userId"];
+    const fromHeader = (req.headers.get("X-Internal-User-Id") ?? "").trim();
+    const incomingUserId =
+      rawUser != null && String(rawUser).trim() !== "" ? String(rawUser) : fromHeader || null;
     const incomingRequest = body.request ? body.request : undefined;
     // blocks иногда приходит строкой (двойная сериализация); null даёт typeof object — отсекаем.
     let rawBlocks: unknown = body.blocks;
@@ -404,7 +407,7 @@ Deno.serve(async (req: Request) => {
     const authHeader = req.headers.get("Authorization") ?? "";
     const bearer = authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
     const role = bearer ? jwtRole(bearer) : null;
-    // Server-to-server (ms-v2-poll): Authorization = service_role, user_id в теле — не вызываем getUser(service JWT).
+    // Server-to-server (ms-v2-poll): service_role + user_id в теле или X-Internal-User-Id — не вызываем getUser(service JWT).
     if (role === "service_role") {
       userId = incomingUserId ?? null;
     } else if (bearer) {

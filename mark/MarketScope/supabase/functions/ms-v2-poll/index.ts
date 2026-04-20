@@ -53,8 +53,7 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-    /** Шлюз /functions/v1 часто проверяет apikey как anon public; service_role оставляем в Authorization. */
-    const anonApiKey = Deno.env.get("SUPABASE_ANON_KEY") ?? serviceRoleKey;
+    /** Supabase /functions/v1: apikey и Authorization с одной и той же service role — иначе шлюз отдаёт 401. */
     const msV2Url = (Deno.env.get("MS_V2_URL") ?? "").replace(/\/+$/, "");
     if (!supabaseUrl || !serviceRoleKey) return json(500, { error: "Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY" });
     if (!msV2Url) return json(500, { error: "Missing MS_V2_URL env" });
@@ -152,16 +151,18 @@ Deno.serve(async (req) => {
       outputs = fromDb;
     }
 
-    // Persist status/progress early
-    await supabase
-      .from("analysis_runs")
-      .update({
-        status: status || runRow.status,
-        progress: progress || runRow.progress || "",
-        warnings: warnings && typeof warnings === "object" ? warnings : {},
-        error: errorText || "",
-      })
-      .eq("id", runId);
+    // Статус + прогресс; по возможности — частичные outputs (чтобы в UI/ремонт было видно блоки по мере готовности)
+    const hasAnyOutputs = outputs && typeof outputs === "object" && Object.keys(outputs as object).length > 0;
+    const patch: Record<string, unknown> = {
+      status: status || runRow.status,
+      progress: progress || runRow.progress || "",
+      warnings: warnings && typeof warnings === "object" ? warnings : {},
+      error: errorText || "",
+    };
+    if (hasAnyOutputs) {
+      patch.outputs = outputs;
+    }
+    await supabase.from("analysis_runs").update(patch).eq("id", runId);
 
     // If finished — ingest into domain tables using existing run_id
     if (status === "done" || status === "done_partial") {
@@ -169,8 +170,9 @@ Deno.serve(async (req) => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          apikey: anonApiKey,
+          apikey: serviceRoleKey,
           Authorization: `Bearer ${serviceRoleKey}`,
+          "X-Internal-User-Id": userId,
         },
         body: JSON.stringify({
           user_id: userId,
