@@ -2,6 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import type { AnalysisRun, ClientRequest } from '../types';
 
+function ensureNumber(id: unknown): number {
+  if (typeof id === 'number' && !Number.isNaN(id)) return id;
+  if (typeof id === 'string') return parseInt(id, 10) || 0;
+  return 0;
+}
+
 export function useClientRequests() {
   const [requests, setRequests] = useState<ClientRequest[]>([]);
   const [runs, setRuns] = useState<AnalysisRun[]>([]);
@@ -21,8 +27,14 @@ export function useClientRequests() {
         const err = eReqs || eRuns;
         if (err) throw err;
         if (cancelled) return;
-        setRequests((reqs ?? []) as ClientRequest[]);
-        setRuns((rns ?? []) as AnalysisRun[]);
+        const mappedReqs = (reqs ?? []).map((r: any) => ({ ...r, id: ensureNumber(r.id) })) as ClientRequest[];
+        const mappedRuns = (rns ?? []).map((r: any) => ({
+          ...r,
+          id: ensureNumber(r.id),
+          request_id: ensureNumber(r.request_id),
+        })) as AnalysisRun[];
+        setRequests(mappedReqs);
+        setRuns(mappedRuns);
       } catch (e) {
         if (!cancelled) {
           setError(e instanceof Error ? e.message : 'Ошибка загрузки запросов');
@@ -62,8 +74,14 @@ export function useClientRequests() {
       ]);
       const err = eReqs || eRuns;
       if (err) throw err;
-      setRequests((reqs ?? []) as ClientRequest[]);
-      setRuns((rns ?? []) as AnalysisRun[]);
+      const mappedReqs = (reqs ?? []).map((r: any) => ({ ...r, id: ensureNumber(r.id) })) as ClientRequest[];
+      const mappedRuns = (rns ?? []).map((r: any) => ({
+        ...r,
+        id: ensureNumber(r.id),
+        request_id: ensureNumber(r.request_id),
+      })) as AnalysisRun[];
+      setRequests(mappedReqs);
+      setRuns(mappedRuns);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Ошибка загрузки запросов');
     } finally {
