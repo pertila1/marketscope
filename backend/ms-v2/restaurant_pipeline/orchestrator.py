@@ -20,6 +20,105 @@ from blocks.block5_tech.run import run as run_block5
 from blocks.block6_aggregator.run import run as run_block6
 
 
+def _ensure_missing_parallel_outputs(
+    report_type: str,
+    b2_path: Path,
+    b3_path: Path,
+    b4_path: Path,
+    b5_path: Path,
+    errors: dict,
+) -> None:
+    """
+    Если один из блоков 2–5 упал до записи JSON, block6 всё равно должен отработать.
+    Пишем минимальные заглушки (и для старых образов без правок в block6).
+    """
+    is_competitive = report_type == "competitive"
+
+    def _msg(label: str) -> str:
+        err = errors.get(label)
+        tail = f" Детали: {err}" if err else ""
+        return (
+            "Блок не выполнен или не записал выходной файл."
+            + tail
+        )
+
+    if not b2_path.exists():
+        if is_competitive:
+            stub = {
+                "block": "block2_menu",
+                "source_csv": "",
+                "menu_by_place": {},
+                "вывод_по_опорному": _msg("2/6 block2_menu"),
+            }
+        else:
+            stub = {
+                "block": "block2_menu",
+                "source_csv": "",
+                "menu_by_place": {},
+                "общий_вывод": _msg("2/6 block2_menu"),
+            }
+        b2_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(b2_path, "w", encoding="utf-8") as f:
+            json.dump(stub, f, ensure_ascii=False, indent=2)
+        print(f"[orchestrator] записана заглушка {b2_path.name}", flush=True)
+
+    if not b3_path.exists():
+        stub = {
+            "block": "block3_reviews",
+            "summary_mode": "skipped",
+            "source_csv": "",
+            "parser_input_csv": "",
+            "source_reviews_json": "",
+            "source_reviews_enriched_json": "",
+            "matched_places_count": 0,
+            "summaries": [],
+        }
+        if is_competitive:
+            stub["вывод_по_опорному"] = _msg("3/6 block3_reviews")
+        else:
+            stub["общий_вывод"] = _msg("3/6 block3_reviews")
+        b3_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(b3_path, "w", encoding="utf-8") as f:
+            json.dump(stub, f, ensure_ascii=False, indent=2)
+        print(f"[orchestrator] записана заглушка {b3_path.name}", flush=True)
+
+    if not b4_path.exists():
+        if is_competitive:
+            stub = {
+                "block": "block4_marketing",
+                "marketing_by_place": {},
+                "вывод_по_опорному": _msg("4/6 block4_marketing"),
+            }
+        else:
+            stub = {
+                "block": "block4_marketing",
+                "marketing_by_place": {},
+                "общий_вывод": _msg("4/6 block4_marketing"),
+            }
+        b4_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(b4_path, "w", encoding="utf-8") as f:
+            json.dump(stub, f, ensure_ascii=False, indent=2)
+        print(f"[orchestrator] записана заглушка {b4_path.name}", flush=True)
+
+    if not b5_path.exists():
+        if is_competitive:
+            stub = {
+                "block": "block5_tech",
+                "tech_by_place": {},
+                "вывод_по_опорному": _msg("5/6 block5_tech"),
+            }
+        else:
+            stub = {
+                "block": "block5_tech",
+                "tech_by_place": {},
+                "общий_вывод": _msg("5/6 block5_tech"),
+            }
+        b5_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(b5_path, "w", encoding="utf-8") as f:
+            json.dump(stub, f, ensure_ascii=False, indent=2)
+        print(f"[orchestrator] записана заглушка {b5_path.name}", flush=True)
+
+
 def _run_block(label: str, fn, *args):
     """Обёртка для запуска блока в потоке с логированием."""
     print(f"[{label}] старт …", flush=True)
@@ -111,6 +210,8 @@ def main(exchange_dir=None, progress_callback=None) -> int:
             "failed_blocks": failed_blocks,
             "errors": {k: str(v) for k, v in errors.items()},
         }, f, ensure_ascii=False, indent=2)
+
+    _ensure_missing_parallel_outputs(report_type, b2_path, b3_path, b4_path, b5_path, errors)
 
     # ── Block 6: последовательно (нужны все выходы) ──
     print(f"[6/6] block6_aggregator ({report_type}) ...", flush=True)
