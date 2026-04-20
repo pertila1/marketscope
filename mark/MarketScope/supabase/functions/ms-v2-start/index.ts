@@ -83,17 +83,20 @@ Deno.serve(async (req) => {
 
     if (requestType === "competitive_analysis") {
       reportType = "competitive";
+      const myRestaurant = (params && typeof params === "object" && (params as any).my_restaurant && typeof (params as any).my_restaurant === "object")
+        ? (params as any).my_restaurant
+        : null;
       analyzeBody = {
         report_type: "competitive",
         mode: "free_form",
         top_n: Number(body.top_n ?? 5) || 5,
         free_form_text: queryText,
         reference_place: {
-          name: toStringSafe(params.my_name ?? params.name ?? ""),
-          address: toStringSafe(params.my_address ?? params.address ?? ""),
-          website: toStringSafe(params.my_website ?? params.website ?? ""),
-          yandex_maps_link: toStringSafe(params.my_yandex_maps_link ?? params.yandex_maps_link ?? ""),
-          menu_url: toStringSafe(params.my_menu_url ?? params.menu_url ?? ""),
+          name: toStringSafe(myRestaurant?.name ?? (params as any).my_name ?? (params as any).name ?? ""),
+          address: toStringSafe(myRestaurant?.address ?? (params as any).my_address ?? (params as any).address ?? ""),
+          website: toStringSafe(myRestaurant?.site ?? myRestaurant?.website ?? (params as any).my_site ?? (params as any).my_website ?? (params as any).website ?? ""),
+          yandex_maps_link: toStringSafe(myRestaurant?.yandex_maps_link ?? (params as any).my_yandex_maps_link ?? (params as any).yandex_maps_link ?? ""),
+          menu_url: toStringSafe(myRestaurant?.menu_url ?? (params as any).my_menu_url ?? (params as any).menu_url ?? ""),
         },
       };
       if (!toStringSafe((analyzeBody.reference_place as any).name)) {
