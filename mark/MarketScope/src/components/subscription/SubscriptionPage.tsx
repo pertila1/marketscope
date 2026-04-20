@@ -15,9 +15,22 @@ type Plan = {
   yearPrice: string;
   summary: string;
   details: string;
-  features: Array<{ text: string; included: boolean }>;
+  featureRows: Array<{ key: string; text: string; included: boolean }>;
   accent: string;
 };
+
+const FEATURE_ORDER: Array<{ key: string; label: string }> = [
+  { key: 'competitors', label: 'Кол-во конкурентов' },
+  { key: 'requests', label: 'Кол-во запросов' },
+  { key: 'comparison', label: 'Сравнительный анализ' },
+  { key: 'report', label: 'Аналитический отчёт' },
+  { key: 'insights', label: 'Рекомендации (инсайты)' },
+  { key: 'export', label: 'Выгрузка результатов' },
+  { key: 'ai', label: 'AI-рекомендации' },
+  { key: 'api', label: 'API/интеграции' },
+  { key: 'manager', label: 'Персональный менеджер' },
+  { key: 'support', label: 'Поддержка / SLA' },
+];
 
 const plans: Plan[] = [
   {
@@ -58,13 +71,17 @@ const plans: Plan[] = [
       'В случае технической невозможности предоставления услуги (сбой системы) — продление периода подписки или возврат средств за неоказанную часть услуги.',
       'Техническая поддержка в рабочее время',
     ].join('\n'),
-    features: [
-      { text: 'До 5 конкурентов', included: true },
-      { text: 'Базовая аналитика', included: true },
-      { text: 'Еженедельные отчеты', included: true },
-      { text: 'Email-уведомления', included: true },
-      { text: 'AI-рекомендации', included: false },
-      { text: 'Расширенные отчеты', included: false },
+    featureRows: [
+      { key: 'competitors', text: 'До 5 конкурентов', included: true },
+      { key: 'requests', text: 'До 5 аналитических запросов/мес', included: true },
+      { key: 'comparison', text: 'Сравнение: цены, отзывы, позиционирование', included: true },
+      { key: 'report', text: 'Формирование отчёта', included: true },
+      { key: 'insights', text: 'Базовые рекомендации', included: true },
+      { key: 'export', text: 'Выгрузка: PDF/таблицы', included: true },
+      { key: 'ai', text: 'AI-рекомендации', included: false },
+      { key: 'api', text: 'API/интеграции', included: false },
+      { key: 'manager', text: 'Персональный менеджер', included: false },
+      { key: 'support', text: 'Поддержка в рабочее время', included: true },
     ],
   },
   {
@@ -105,13 +122,17 @@ const plans: Plan[] = [
       'В случае технической невозможности предоставления услуги (сбой системы) — продление периода подписки или возврат средств за неоказанную часть услуги.',
       'Техническая поддержка в рабочее время',
     ].join('\n'),
-    features: [
-      { text: 'До 15 конкурентов', included: true },
-      { text: 'Расширенная аналитика', included: true },
-      { text: 'AI-рекомендации', included: true },
-      { text: 'Настраиваемые отчеты', included: true },
-      { text: 'API-интеграция', included: true },
-      { text: 'Персональный менеджер', included: false },
+    featureRows: [
+      { key: 'competitors', text: 'До 15 конкурентов', included: true },
+      { key: 'requests', text: 'До 10 аналитических запросов/мес', included: true },
+      { key: 'comparison', text: 'Сравнение: цены, отзывы, позиционирование', included: true },
+      { key: 'report', text: 'Формирование отчёта', included: true },
+      { key: 'insights', text: 'Базовые рекомендации', included: true },
+      { key: 'export', text: 'Выгрузка: PDF/таблицы', included: true },
+      { key: 'ai', text: 'AI-рекомендации', included: true },
+      { key: 'api', text: 'API/интеграции', included: true },
+      { key: 'manager', text: 'Персональный менеджер', included: false },
+      { key: 'support', text: 'Поддержка в рабочее время', included: true },
     ],
   },
   {
@@ -150,12 +171,17 @@ const plans: Plan[] = [
       'Закрепляются договором',
       'Возможные соглашения об уровне обслуживания по доступности сервиса',
     ].join('\n'),
-    features: [
-      { text: 'Неограниченное число конкурентов', included: true },
-      { text: 'Полный доступ к платформе', included: true },
-      { text: 'Приоритетные обновления', included: true },
-      { text: 'Персональный менеджер', included: true },
-      { text: 'Индивидуальная настройка', included: true },
+    featureRows: [
+      { key: 'competitors', text: 'Неограниченное число конкурентов', included: true },
+      { key: 'requests', text: 'Неограниченное число запросов', included: true },
+      { key: 'comparison', text: 'Сравнительный анализ', included: true },
+      { key: 'report', text: 'Индивидуальные отчёты', included: true },
+      { key: 'insights', text: 'Рекомендации под бизнес-задачи', included: true },
+      { key: 'export', text: 'Выгрузка результатов', included: true },
+      { key: 'ai', text: 'Кастомизация аналитики', included: true },
+      { key: 'api', text: 'Интеграции с внешними системами', included: true },
+      { key: 'manager', text: 'Персональный менеджер', included: true },
+      { key: 'support', text: 'Выделенная поддержка и SLA', included: true },
     ],
   },
 ];
@@ -250,45 +276,64 @@ const SubscriptionPage: React.FC<SubscriptionPageProps> = ({ onBackToRequest }) 
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {plans.map((plan) => (
-          <div key={plan.code} className={`${plan.accent} text-white rounded-2xl border border-white/10 overflow-hidden`}>
-            <div className="p-6 border-b border-white/10">
+          <div
+            key={plan.code}
+            className={`${plan.accent} text-white rounded-2xl border border-white/10 overflow-hidden flex flex-col h-full`}
+          >
+            <div className="p-6 border-b border-white/10 min-h-[196px]">
               <h3 className="text-2xl font-semibold">{plan.title}</h3>
               <p className="mt-3 text-3xl font-bold">{plan.monthPrice}</p>
               {plan.yearPrice ? <p className="mt-1 text-white/70">{plan.yearPrice}</p> : null}
               <p className="mt-4 text-sm text-white/85 leading-relaxed">{plan.summary}</p>
-              <button
-                type="button"
-                onClick={() => setDetailsCode(plan.code)}
-                className="mt-3 text-sm text-white/90 hover:text-white underline underline-offset-4"
-              >
-                Подробнее
-              </button>
             </div>
-            <div className="p-6 space-y-3">
-              {plan.features.map((f, i) => (
-                <div key={i} className="flex items-start gap-2">
-                  {f.included ? <Check className="w-4 h-4 text-cyan-300 mt-0.5" /> : <X className="w-4 h-4 text-white/50 mt-0.5" />}
-                  <span className={`${f.included ? '' : 'text-white/60'}`}>{f.text}</span>
-                </div>
-              ))}
+            <div className="p-6 space-y-3 flex-1">
+              {FEATURE_ORDER.map(({ key }) => {
+                const row = plan.featureRows.find((r) => r.key === key);
+                const included = row?.included ?? false;
+                const text = row?.text ?? '—';
+                return (
+                  <div key={key} className="flex items-start gap-2 min-h-[22px]">
+                    {included ? <Check className="w-4 h-4 text-cyan-300 mt-0.5" /> : <X className="w-4 h-4 text-white/50 mt-0.5" />}
+                    <span className={`${included ? '' : 'text-white/60'}`}>{text}</span>
+                  </div>
+                );
+              })}
             </div>
-            <div className="p-6 pt-0">
+            <div className="p-6 pt-0 mt-auto">
               {plan.code === 'enterprise' ? (
-                <a
-                  href="mailto:sales@marketscope.ai?subject=Enterprise%20MarketScope"
-                  className="block text-center w-full py-2 rounded-lg bg-indigo-500/40 hover:bg-indigo-500/55 transition"
-                >
-                  Связаться с отделом продаж
-                </a>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <a
+                    href="mailto:sales@marketscope.ai?subject=Enterprise%20MarketScope"
+                    className="block text-center w-full py-2 rounded-lg bg-indigo-500/40 hover:bg-indigo-500/55 transition"
+                  >
+                    Связаться с отделом продаж
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => setDetailsCode(plan.code)}
+                    className="w-full py-2 rounded-lg bg-white/10 hover:bg-white/15 transition"
+                  >
+                    Подробнее
+                  </button>
+                </div>
               ) : (
-                <button
-                  type="button"
-                  onClick={() => startPayment(plan.code)}
-                  disabled={Boolean(loadingCode)}
-                  className="w-full py-2 rounded-lg bg-emerald-500/80 hover:bg-emerald-500 disabled:opacity-60 transition"
-                >
-                  {loadingCode === plan.code ? 'Переход к оплате...' : 'Выбрать тариф и оплатить'}
-                </button>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => startPayment(plan.code)}
+                    disabled={Boolean(loadingCode)}
+                    className="w-full py-2 rounded-lg bg-emerald-500/80 hover:bg-emerald-500 disabled:opacity-60 transition"
+                  >
+                    {loadingCode === plan.code ? 'Переход к оплате...' : 'Выбрать и оплатить'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDetailsCode(plan.code)}
+                    className="w-full py-2 rounded-lg bg-white/10 hover:bg-white/15 transition"
+                  >
+                    Подробнее
+                  </button>
+                </div>
               )}
             </div>
           </div>
