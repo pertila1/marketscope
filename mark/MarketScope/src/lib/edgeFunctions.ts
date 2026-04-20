@@ -28,6 +28,9 @@ export async function invokeEdgeFunction<T>(name: string, body: unknown): Promis
     headers: {
       'Content-Type': 'application/json',
       apikey: anonKey,
+      // Supabase Edge Gateway requires Authorization header for functions.
+      // Use anon key here to avoid ES256 user token validation at the gateway.
+      Authorization: `Bearer ${anonKey}`,
       ...(userJwt ? { 'X-User-JWT': userJwt } : {}),
     },
     body: JSON.stringify(body ?? {}),
