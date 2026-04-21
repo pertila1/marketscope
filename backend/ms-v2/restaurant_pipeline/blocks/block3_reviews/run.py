@@ -620,12 +620,24 @@ def run(
         env["PYTHONUNBUFFERED"] = "1"
         proc = subprocess.run(cmd, env=env)
         if proc.returncode != 0:
-            raise RuntimeError(
-                f"parse_yandex_reviews завершился с кодом {proc.returncode}"
-            )
+            # Иногда Chrome/ChromeDriver падают посередине (localhost:<port> connection refused).
+            # Если файл с отзывами всё же успел записаться — продолжаем с частичными данными.
+            if parser_output_json.exists():
+                print(
+                    f"[block3] WARNING: parse_yandex_reviews exited {proc.returncode}, "
+                    f"but {parser_output_json} exists — continuing with partial reviews.",
+                    flush=True,
+                )
+            else:
+                raise RuntimeError(
+                    f"parse_yandex_reviews завершился с кодом {proc.returncode}"
+                )
 
-        with open(parser_output_json, "r", encoding="utf-8") as f:
-            reviews_data = json.load(f)
+        if parser_output_json.exists():
+            with open(parser_output_json, "r", encoding="utf-8") as f:
+                reviews_data = json.load(f)
+        else:
+            reviews_data = []
 
     # Оценка тональности каждого отзыва (-1/0/1)
     from restaurant_pipeline.blocks.block3_reviews.sentiment import add_sentiment_to_reviews

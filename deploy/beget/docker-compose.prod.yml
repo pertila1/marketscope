@@ -37,7 +37,7 @@ services:
       - jobs_data:/app/jobs
       - encoder_cache:/app/encoder_cache
       - hf_cache:/root/.cache/huggingface
-    shm_size: "1gb"
+    shm_size: "2gb"
     command: bash service/start_worker.sh
 
   caddy:
