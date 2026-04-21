@@ -51,13 +51,26 @@ const NewRequestTab: React.FC<NewRequestTabProps> = ({ onCreated, onOpenSubscrip
     };
   }, [mode, placeType, cuisine, avgCheckMin, avgCheckMax, myName, myAddress, mySite, myMenuUrl]);
 
+  const avgCheckRangeOk = useMemo(() => {
+    if (mode !== 'market_overview') return true;
+    if (avgCheckMin === '' || avgCheckMax === '') return false;
+    if (!Number.isFinite(avgCheckMin) || !Number.isFinite(avgCheckMax)) return false;
+    return avgCheckMin > 0 && avgCheckMax > 0 && avgCheckMin <= avgCheckMax;
+  }, [mode, avgCheckMin, avgCheckMax]);
+
   const canSubmit = useMemo(() => {
     if (!user) return false;
     if (!subscriptionActive) return false;
     if (!queryText.trim()) return false;
-    if (mode === 'market_overview') return true;
-    return Boolean(myName.trim() || myAddress.trim() || mySite.trim() || myMenuUrl.trim());
-  }, [user, subscriptionActive, queryText, mode, myName, myAddress, mySite, myMenuUrl]);
+    if (mode === 'market_overview') {
+      if (!placeType.trim()) return false;
+      if (!cuisine.trim()) return false;
+      if (avgCheckMin === '' || avgCheckMax === '') return false;
+      if (!avgCheckRangeOk) return false;
+      return true;
+    }
+    return Boolean(myName.trim() && myAddress.trim() && mySite.trim() && myMenuUrl.trim());
+  }, [user, subscriptionActive, queryText, mode, placeType, cuisine, avgCheckMin, avgCheckMax, avgCheckRangeOk, myName, myAddress, mySite, myMenuUrl]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -160,6 +173,7 @@ const NewRequestTab: React.FC<NewRequestTabProps> = ({ onCreated, onOpenSubscrip
             <input
               value={queryText}
               onChange={(e) => setQueryText(e.target.value)}
+              required
               className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder={mode === 'market_overview' ? 'Например: Русские рестораны 2000–5000 ₽' : 'Например: Сравнить мой ресторан с конкурентами'}
             />
@@ -172,6 +186,7 @@ const NewRequestTab: React.FC<NewRequestTabProps> = ({ onCreated, onOpenSubscrip
                 <input
                   value={placeType}
                   onChange={(e) => setPlaceType(e.target.value)}
+                  required
                   className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Например: ресторан"
                 />
@@ -181,6 +196,7 @@ const NewRequestTab: React.FC<NewRequestTabProps> = ({ onCreated, onOpenSubscrip
                 <input
                   value={cuisine}
                   onChange={(e) => setCuisine(e.target.value)}
+                  required
                   className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Например: русская"
                 />
@@ -191,6 +207,8 @@ const NewRequestTab: React.FC<NewRequestTabProps> = ({ onCreated, onOpenSubscrip
                   type="number"
                   value={avgCheckMin}
                   onChange={(e) => setAvgCheckMin(e.target.value === '' ? '' : Number(e.target.value))}
+                  required
+                  min={1}
                   className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="2000"
                 />
@@ -201,9 +219,16 @@ const NewRequestTab: React.FC<NewRequestTabProps> = ({ onCreated, onOpenSubscrip
                   type="number"
                   value={avgCheckMax}
                   onChange={(e) => setAvgCheckMax(e.target.value === '' ? '' : Number(e.target.value))}
+                  required
+                  min={1}
                   className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="5000"
                 />
+                {!avgCheckRangeOk && (
+                  <div className="mt-1 text-xs text-rose-700">
+                    Укажи корректный диапазон: «от» ≤ «до», оба значения больше 0.
+                  </div>
+                )}
               </div>
             </div>
           ) : (
@@ -214,6 +239,7 @@ const NewRequestTab: React.FC<NewRequestTabProps> = ({ onCreated, onOpenSubscrip
                   <input
                     value={myName}
                     onChange={(e) => setMyName(e.target.value)}
+                    required
                     className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="Название"
                   />
@@ -223,6 +249,7 @@ const NewRequestTab: React.FC<NewRequestTabProps> = ({ onCreated, onOpenSubscrip
                   <input
                     value={myAddress}
                     onChange={(e) => setMyAddress(e.target.value)}
+                    required
                     className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="Адрес"
                   />
@@ -234,6 +261,7 @@ const NewRequestTab: React.FC<NewRequestTabProps> = ({ onCreated, onOpenSubscrip
                   <input
                     value={mySite}
                     onChange={(e) => setMySite(e.target.value)}
+                    required
                     className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="https://..."
                   />
@@ -243,6 +271,7 @@ const NewRequestTab: React.FC<NewRequestTabProps> = ({ onCreated, onOpenSubscrip
                   <input
                     value={myMenuUrl}
                     onChange={(e) => setMyMenuUrl(e.target.value)}
+                    required
                     className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="https://..."
                   />
