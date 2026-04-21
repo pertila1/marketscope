@@ -498,13 +498,35 @@ def main():
 
 
     results = []
+
+    # Пишем прогресс на диск после каждого заведения.
+    # Это важно: Chrome/ChromeDriver могут упасть посередине, тогда всё равно останутся частичные результаты,
+    # и block3 сможет продолжить работу с block3_reviews_raw.json.
+    out_path = Path(args.output)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    def _flush_results() -> None:
+        try:
+            tmp = out_path.with_suffix(out_path.suffix + ".tmp")
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(results, f, ensure_ascii=False, indent=2)
+            tmp.replace(out_path)
+        except Exception as e:
+            print(f"      [WARN] не смог записать прогресс в {out_path}: {e}")
     print(
         f"Используется ChromeDriver для Chrome {chrome_major} "
         f"({'явный --chrome-version' if args.chrome_version is not None else 'авто из google-chrome'})."
     )
 
 
-    with uc.Chrome(options=options) as driver:
+    try:
+        driver_cm = uc.Chrome(options=options)
+    except Exception as e:
+        print(f"Не удалось запустить Chrome: {e}")
+        _flush_results()
+        return 1
+
+    with driver_cm as driver:
         for num, (_, row) in enumerate(df.iterrows(), start=1):
             name = str(row["название"]).strip() if pd.notna(row["название"]) else ""
             address = str(row["адрес"]).strip() if pd.notna(row["адрес"]) else ""
@@ -536,6 +558,7 @@ def main():
                     "company_info": None,
                     "reviews": [],
                 })
+                _flush_results()
                 delay = random.uniform(*DELAY_BETWEEN_PLACES)
                 print(f"      Пауза {delay:.1f} с...")
                 time.sleep(delay)
@@ -560,6 +583,7 @@ def main():
             place_result = parse_reviews_for_place(name, address, org_id)
             print(f"      Парсинг: {t.time()-t1:.1f} с")
             results.append(place_result)
+            _flush_results()
             n_reviews = len(place_result.get("reviews") or [])
             print(f"      Отзывов: {n_reviews}")
 
@@ -568,12 +592,7 @@ def main():
             time.sleep(delay)
 
 
-    out_path = Path(args.output)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(out_path, "w", encoding="utf-8") as f:
-        json.dump(results, f, ensure_ascii=False, indent=2)
-
-
+    _flush_results()
     print(f"Готово. Результаты сохранены в {out_path}")
     return 0
 
