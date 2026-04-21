@@ -132,6 +132,7 @@ function v2DatasetFromBlocks(blocks: Record<string, unknown>): JsonDataset {
   const menuByPlace = asObject(b2.menu_by_place);
   const menus: Array<Record<string, unknown>> = [];
   const menuItems: Array<Record<string, unknown>> = [];
+  const menuReferenceConclusion = toStringSafe(b2["вывод_по_опорному"] ?? b2["общий_вывод"] ?? b2.reference_conclusion);
   let menuId = 1;
   let menuItemId = 1;
   for (const [placeName, menuObj] of Object.entries(menuByPlace)) {
@@ -149,7 +150,7 @@ function v2DatasetFromBlocks(blocks: Record<string, unknown>): JsonDataset {
       has_kids_menu: Boolean(m.has_kids_menu),
       categories,
       conclusion: toStringSafe(m["вывод"] ?? m.conclusion),
-      reference_conclusion: "",
+      reference_conclusion: menuReferenceConclusion,
     };
     menus.push(menuRow);
     items.forEach((it) => {
@@ -296,22 +297,7 @@ function v2DatasetFromBlocks(blocks: Record<string, unknown>): JsonDataset {
     });
   }
 
-  // Per current UI requirements, menu conclusions are displayed from block5 tech выводs
-  if (menus.length > 0) {
-    const menuByRestaurant = new Map<number, Record<string, unknown>>();
-    menus.forEach((m) => menuByRestaurant.set(Number(m.restaurant_id), m));
-    for (const [placeName, tObj] of Object.entries(techByPlace)) {
-      const restId = restaurantIdByName.get(placeName);
-      if (!restId) continue;
-      const menu = menuByRestaurant.get(restId);
-      if (!menu) continue;
-      const t = asObject(tObj);
-      menu.conclusion = toStringSafe(t["вывод"] ?? t.conclusion);
-      menu.reference_conclusion = toStringSafe(
-        b5["вывод_по_опорному"] ?? b5["общий_вывод"] ?? b5.reference_conclusion,
-      );
-    }
-  }
+  // NOTE: menu выводы берём из block2 (меню), а не из block5 (теханализ сайтов).
 
   const sections = asObject(b6.sections);
   const reportMd = toStringSafe(b6.report_md);
