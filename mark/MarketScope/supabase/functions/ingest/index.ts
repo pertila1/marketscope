@@ -88,12 +88,67 @@ function jwtRole(bearer: string): string | null {
 }
 
 function v2DatasetFromBlocks(blocks: Record<string, unknown>): JsonDataset {
-  const b1 = asObject(blocks.block1 ?? blocks.block1_output ?? blocks["block1_output.json"] ?? blocks["block1"]);
-  const b2 = asObject(blocks.block2 ?? blocks.block2_output ?? blocks["block2_output.json"] ?? blocks["block2"]);
-  const b3 = asObject(blocks.block3 ?? blocks.block3_output ?? blocks["block3_output.json"] ?? blocks["block3"]);
-  const b4 = asObject(blocks.block4 ?? blocks.block4_output ?? blocks["block4_output.json"] ?? blocks["block4"]);
-  const b5 = asObject(blocks.block5 ?? blocks.block5_output ?? blocks["block5_output.json"] ?? blocks["block5"]);
-  const b6 = asObject(blocks.block6 ?? blocks.block6_output ?? blocks["block6_output.json"] ?? blocks["block6"]);
+  // Support multiple shapes: { block1 }, { block1_relevance }, { "block1_output.json" }, etc.
+  const b1 = asObject(
+    blocks.block1 ??
+      blocks.block1_output ??
+      blocks.block1_relevance ??
+      blocks.block1_relevance_output ??
+      blocks["block1_output.json"] ??
+      blocks["block1"] ??
+      blocks["block1_relevance"] ??
+      blocks["block1_relevance_output.json"],
+  );
+  const b2 = asObject(
+    blocks.block2 ??
+      blocks.block2_output ??
+      blocks.block2_menu ??
+      blocks.block2_menu_output ??
+      blocks["block2_output.json"] ??
+      blocks["block2"] ??
+      blocks["block2_menu"] ??
+      blocks["block2_menu_output.json"],
+  );
+  const b3 = asObject(
+    blocks.block3 ??
+      blocks.block3_output ??
+      blocks.block3_reviews ??
+      blocks.block3_reviews_output ??
+      blocks["block3_output.json"] ??
+      blocks["block3"] ??
+      blocks["block3_reviews"] ??
+      blocks["block3_reviews_output.json"],
+  );
+  const b4 = asObject(
+    blocks.block4 ??
+      blocks.block4_output ??
+      blocks.block4_marketing ??
+      blocks.block4_marketing_output ??
+      blocks["block4_output.json"] ??
+      blocks["block4"] ??
+      blocks["block4_marketing"] ??
+      blocks["block4_marketing_output.json"],
+  );
+  const b5 = asObject(
+    blocks.block5 ??
+      blocks.block5_output ??
+      blocks.block5_tech ??
+      blocks.block5_tech_output ??
+      blocks["block5_output.json"] ??
+      blocks["block5"] ??
+      blocks["block5_tech"] ??
+      blocks["block5_tech_output.json"],
+  );
+  const b6 = asObject(
+    blocks.block6 ??
+      blocks.block6_output ??
+      blocks.block6_aggregator ??
+      blocks.block6_aggregator_output ??
+      blocks["block6_output.json"] ??
+      blocks["block6"] ??
+      blocks["block6_aggregator"] ??
+      blocks["block6_aggregator_output.json"],
+  );
   const b3Enriched = asArray(
     blocks.block3_reviews_enriched ??
       blocks["block3_reviews_enriched.json"] ??
@@ -178,9 +233,14 @@ function v2DatasetFromBlocks(blocks: Record<string, unknown>): JsonDataset {
         restaurant_id: restId,
         summary_mode: toStringSafe(b3.summary_mode),
         reviews_count: toNumberSafe(s["количество_отзывов"]),
+        // DB columns are NOT NULL with defaults. We still set explicit values to avoid nulls.
+        rating: 0,
+        count_rating: 0,
         general_info: toStringSafe(s["общая_информация"]),
         positive: pos.join("\n"),
         negative: neg.join("\n"),
+        positive_reviews: [],
+        negative_reviews: [],
         conclusion: toStringSafe(s["вывод"] ?? s.conclusion),
       };
     })
@@ -207,8 +267,8 @@ function v2DatasetFromBlocks(blocks: Record<string, unknown>): JsonDataset {
       .slice(0, 120);
     const row = summaryByRest.get(restId);
     if (!row) return;
-    row.rating = toNumberSafe(ci.rating);
-    row.count_rating = toNumberSafe(ci.count_rating);
+    row.rating = toNumberSafe(ci.rating) || 0;
+    row.count_rating = toNumberSafe(ci.count_rating) || 0;
     row.positive_reviews = positive;
     row.negative_reviews = negative;
   });
@@ -498,11 +558,52 @@ Deno.serve(async (req: Request) => {
 
     const restaurants = body.restaurants ?? [];
     if (restaurants.length === 0) {
-      return new Response(JSON.stringify({ error: "restaurants array is required and must not be empty" }), {
+      // Debug payload to quickly see why v2 blocks didn't produce restaurants
+      const blockKeys =
+        incomingBlocks && typeof incomingBlocks === "object" ? Object.keys(incomingBlocks) : [];
+      const b1 = incomingBlocks ? asObject(
+        (incomingBlocks as any).block1 ??
+          (incomingBlocks as any).block1_output ??
+          (incomingBlocks as any).block1_relevance ??
+          (incomingBlocks as any).block1_relevance_output ??
+          (incomingBlocks as any)["block1_output.json"] ??
+          (incomingBlocks as any)["block1"] ??
+          (incomingBlocks as any)["block1_relevance"] ??
+          (incomingBlocks as any)["block1_relevance_output.json"],
+      ) : {};
+      return new Response(JSON.stringify({
+        error: "restaurants array is required and must not be empty",
+        debug: {
+          reportType,
+          has_incoming_blocks: Boolean(incomingBlocks),
+          incoming_block_keys: blockKeys,
+          block1_keys: b1 && typeof b1 === "object" ? Object.keys(b1) : [],
+          selected_places_len: Array.isArray((b1 as any).selected_places) ? (b1 as any).selected_places.length : 0,
+          query_context: toStringSafe((b1 as any).query_context).slice(0, 200),
+          top_n: typeof (b1 as any).top_n === "number" ? (b1 as any).top_n : null,
+        },
+      }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    // Idempotency for repairs/retries:
+    // Only delete existing run rows AFTER we verified we have a non-empty dataset.
+    // This prevents accidental data loss if ms-v2 produced empty selected_places.
+    const del = async (table: string) => {
+      const { error } = await supabase.from(table).delete().eq("run_id", runId);
+      if (error) throw new Error(`${table}: ${errToMessage(error)}`);
+    };
+    await del("marketing_socials");
+    await del("marketing_loyalty");
+    await del("marketing");
+    await del("menu_items");
+    await del("menus");
+    await del("reviews");
+    await del("technical_analysis");
+    await del("strategic_report");
+    await del("restaurants");
 
     const restIdMap = new Map<number, number>();
     const insertedRestaurants = await supabase

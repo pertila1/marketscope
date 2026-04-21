@@ -123,7 +123,16 @@ Deno.serve(async (req) => {
     if (!jobId) return json(400, { error: "Run has no job_id yet" });
 
     const hasBlock1 = (o: Record<string, unknown>) =>
-      Boolean(o.block1 ?? o.block1_output ?? o["block1_output.json"] ?? o["block1"]);
+      Boolean(
+        o.block1 ??
+          o.block1_output ??
+          o.block1_relevance ??
+          o.block1_relevance_output ??
+          o["block1_output.json"] ??
+          o["block1"] ??
+          o["block1_relevance"] ??
+          o["block1_relevance_output.json"],
+      );
     const fromDb = normalizeOutputs(runRow.outputs);
 
     const msRes = await fetch(`${msV2Url}/jobs/${encodeURIComponent(jobId)}`, { method: "GET" });
@@ -171,6 +180,17 @@ Deno.serve(async (req) => {
 
     // If finished — ingest into domain tables using existing run_id
     if (status === "done" || status === "done_partial") {
+      if (!hasBlock1(outputs)) {
+        // Debug: without block1 we can't build restaurants for ingest
+        return json(502, {
+          error: "Cannot ingest: outputs missing block1",
+          run_id: runId,
+          job_id: jobId,
+          status,
+          progress,
+          output_keys: outputs && typeof outputs === "object" ? Object.keys(outputs) : [],
+        });
+      }
       const ingestRes = await fetch(`${supabaseUrl}/functions/v1/ingest`, {
         method: "POST",
         headers: {
@@ -187,9 +207,27 @@ Deno.serve(async (req) => {
       });
       const ingestJson = await ingestRes.json().catch(() => ({}));
       if (!ingestRes.ok) {
+        const ingestErr =
+          typeof (ingestJson as any)?.error === "string"
+            ? String((ingestJson as any).error)
+            : (() => {
+                try {
+                  return JSON.stringify(ingestJson);
+                } catch {
+                  return String(ingestJson);
+                }
+              })();
         await supabase
           .from("analysis_runs")
           .update({ status: "error", error: `ingest failed: ${ingestRes.status}`, finished_at: new Date().toISOString() })
+          .eq("id", runId);
+        await supabase
+          .from("analysis_runs")
+          .update({
+            status: "error",
+            error: `ingest failed: ${ingestRes.status}${ingestErr ? ` | ${ingestErr}` : ""}`,
+            finished_at: new Date().toISOString(),
+          })
           .eq("id", runId);
         return json(502, { error: "Ingest failed", details: ingestJson });
       }
